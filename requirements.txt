@@ -1,0 +1,3 @@
+pyshark>=0.6
+scapy>=2.4.0
+sdp-tranform>=1.0.6
