@@ -38,11 +38,6 @@ class RTSPTrack(NamedTuple):
         return display_filter
 
 
-class _State(Enum):
-    GET_SDP = 0
-    GET_TRACKS = 1
-
-
 class RTSPDataExtractor:
     """
     Find the first RTSP stream, and extract from it the stream name, the sdp and the tracks
@@ -87,7 +82,6 @@ class RTSPDataExtractor:
         
         assert stream_name is not None and sdp is not None and tracks, "Error parsing RSTP"
         return stream_name, sdp, tracks
-
 
     def _get_sdp(self, capture: FileCapture) -> Tuple[str, dict]:
         while True:

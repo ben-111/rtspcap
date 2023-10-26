@@ -31,8 +31,8 @@ def main(input_path: str, output_path: Optional[str]) -> None:
                 rtp_decoder.decode_stream(rtp_capture, config, codec, rate)
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='RTSP server from pcap')
-    parser.add_argument('input', help='Path to pcap with RTSP and RTP data')
+    parser = argparse.ArgumentParser(description='RTSP decoder from capture file')
+    parser.add_argument('input', help='Path to capture_file with RTSP and RTP data')
     parser.add_argument('-o', '--output', help='Path to output file')
     parser.add_argument('-v', '--verbose', action='store_true', help='Add debug prints')
     args = parser.parse_args()
