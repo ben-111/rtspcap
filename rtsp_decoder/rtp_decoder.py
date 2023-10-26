@@ -41,11 +41,16 @@ class RTPDecoder:
         while True:
             try:
                 if expected_seq in out_of_order_packets:
-                    packet = out_of_order_packets[expected_seq]
+                    packet = out_of_order_packets.pop(expected_seq)
                 else:
                     packet = next(rtp_stream)
             except StopIteration:
-                break
+                if out_of_order_packets:
+                    self.logger.debug('Out of order packet found after the end of the pcap file; Appending to the end')
+                    earliest_packet = min(out_of_order_packets.keys())
+                    packet = out_of_order_packets.pop(earliest_packet)
+                else:
+                    break
 
             seq = int(packet['RTP'].seq)
             if seq != expected_seq:
