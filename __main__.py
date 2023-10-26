@@ -1,5 +1,5 @@
 import argparse
-from rtsp_decoder.parse_rstp import RTSPDataExtractor
+from rtsp_decoder.parse_rtsp import RTSPDataExtractor
 
 def main(pcap_path: str) -> None:
     rtsp_data = RTSPDataExtractor(pcap_path)
