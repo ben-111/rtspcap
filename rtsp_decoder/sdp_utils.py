@@ -4,6 +4,25 @@ from typing import Dict
 SDP_CODEC_TO_AV_CODEC = {
     'mp4v-es': 'mpeg4',
     'mpeg4-generic': 'aac',
+    'h263-1998': 'h263',
+    'h263-2000': 'h263',
+    'ilbc': 'ilbc',
+    'amr': 'amr_nb',
+    'amr-wb': 'amr_wb',
+    'ac3': 'ac3',
+    'dv': 'dvvideo',
+    'mp4a-latm': 'aac',
+    'h261': 'h261',
+    'vc2': 'dirac',
+    'x-purevoice': 'qcelp',
+    'vp8': 'vp8',
+    'h265': 'hevc',
+    'jpeg': 'mjpeg',
+    'theora': 'theora',
+    'vorbis': 'vorbis',
+    'mpa-robust': 'mp3adu',
+    'h264': 'h264',
+    'vp9': 'vp9',
 }
 
 def translate_sdp_to_av_codec(codec_name: str) -> str:
