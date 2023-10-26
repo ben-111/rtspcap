@@ -1,4 +1,3 @@
-from binascii import unhexlify
 from enum import Enum
 
 from pyshark import FileCapture
@@ -41,7 +40,7 @@ class RTSPDataExtractor:
     def __init__(self, pcap_path: str):
         self.stream_name = None
         self.sdp = None
-        self.tracks = dict()
+        self.tracks: Dict[str, RTSPTrack] = dict()
 
         # Currently only taking the first stream we find
         cap = FileCapture(pcap_path, display_filter=f'rtsp')
@@ -72,7 +71,7 @@ class RTSPDataExtractor:
     def _get_sdp(self, request, response):
         if hasattr(request.rtsp, 'method') and request.rtsp.method == 'DESCRIBE':
             self.stream_name = request.rtsp.url
-            self.sdp = sdp_transform.parse(unhexlify(response.rtsp.data.replace(':', '')).decode())
+            self.sdp = sdp_transform.parse(bytes.fromhex(response.rtsp.data.raw_value).decode())
             self._state = _State.GET_TRACKS
 
     def _get_tracks(self, request, response):
