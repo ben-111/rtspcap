@@ -54,7 +54,6 @@ class RTPDecoder:
 
             seq = int(packet['RTP'].seq)
             if seq != expected_seq:
-                self.logger.debug(f'Packet with sequence number {seq} is out of order; expecting {expected_seq}')
                 out_of_order_packets[seq] = packet
                 if len(out_of_order_packets) > self.MAX_OUT_OF_ORDER_PACKETS:
                     self.logger.debug(f'Could not find packet with sequence number {expected_seq}; Likely packet loss')
