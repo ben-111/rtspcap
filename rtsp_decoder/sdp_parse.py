@@ -1,6 +1,8 @@
+from base64 import b64decode
 from av.codec import CodecContext
+from av.stream import Stream
 
-from typing import Dict, Optional
+from typing import Dict
 
 import logging
 
@@ -64,24 +66,63 @@ def _parse_fmtp(sdp_media: dict) -> Dict[str, str]:
 
 def _get_mpeg4_codec_context(sdp_media: dict) -> CodecContext:
     fmtp = _parse_fmtp(sdp_media)
-    if "config" not in fmtp:
-        raise ValueError("Expected config in fmtp of mpeg4")
+    assert "config" in fmtp, "Expected config in fmtp of mpeg4"
 
     codec_ctx = CodecContext.create("mpeg4", "r")
+
+    # TODO: check if there is more to do
     codec_ctx.extradata = bytes.fromhex(fmtp["config"])
+    return codec_ctx
+
+
+_H264_STARTING_SEQUENCE = b"\x00\x00\x00\x01"
+_H264_INPUT_BUFFER_PADDING_SIZE = 64
+
+
+# Taken from ffmpeg: `rtpdec_h264.c:ff_h264_parse_sprop_parameter_sets`
+def _get_h264_codec_context(sdp_media: dict) -> CodecContext:
+    fmtp = _parse_fmtp(sdp_media)
+    assert (
+        "sprop-parameter-sets" in fmtp
+    ), "Expected sprop-parameter-sets in fmtp of h264"
+    extradata = b""
+    for sprop_parameter_set in fmtp["sprop-parameter-sets"].split(","):
+        extradata += (
+            _H264_STARTING_SEQUENCE
+            + b64decode(sprop_parameter_set)
+            + (b"\x00" * _H264_INPUT_BUFFER_PADDING_SIZE)
+        )
+
+    codec_ctx = CodecContext.create("h264", "r")
+    codec_ctx.extradata = extradata
+    return codec_ctx
+
+
+def _get_h264_stream(sdp_media: dict) -> Stream:
+    fmtp = _parse_fmtp(sdp_media)
+    assert (
+        "sprop-parameter-sets" in fmtp
+    ), "Expected sprop-parameter-sets in fmtp of h264"
+    extradata = b""
+    for sprop_parameter_set in fmtp["sprop-parameter-sets"].split(","):
+        extradata += b64decode(sprop_parameter_set)
+
+    codec_ctx = CodecContext.create("h264", "r")
+    codec_ctx.extradata = extradata
     return codec_ctx
 
 
 _CODEC_SDP_PARSERS = {
     "mpeg4": _get_mpeg4_codec_context,
+    "h264": _get_h264_codec_context,
 }
 
 
-def get_codec_context(sdp: dict, track_id: str) -> Optional[CodecContext]:
+def get_codec_context(sdp: dict, track_id: str) -> CodecContext:
     sdp_media = _get_sdp_media_from_track_id(sdp, track_id)
     codec = _get_codec_from_sdp_media(sdp_media)
     if codec not in _CODEC_SDP_PARSERS:
-        logger.error(f"Got unsupported codec: {codec}")
+        logger.warning(f"Got unsupported codec: {codec}")
         return
 
     get_specific_codec_context = _CODEC_SDP_PARSERS[codec]

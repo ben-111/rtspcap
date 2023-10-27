@@ -20,13 +20,15 @@ class RTPDecoder:
         """Assume rtp_capture is filtered so that all RTP packets we see are from the same stream"""
         codec_ctx = get_codec_context(sdp, track_id)
         if codec_ctx is None:
-            raise ValueError(f"Unsupported codec")
+            self.logger.warning(f"Skipping unsupported codec")
+            return
 
         self.logger.info(f"Decoding Stream with codec: {codec_ctx.name}")
         if codec_ctx.type == "video":
             stream = self.container.add_stream("h264", rate=30)
         elif codec_ctx.type == "audio":
-            stream = self.container.add_stream("aac")
+            self.logger.warning(f"Audio ")
+            # stream = self.container.add_stream("aac")
         else:
             raise ValueError(f"Unexpected codec type: {codec_ctx.type}")
 
@@ -64,10 +66,12 @@ class RTPDecoder:
                         f"Could not find packet with sequence number {expected_seq}; Likely packet loss"
                     )
                     expected_seq += 1
+                    expected_seq %= 1 << 16
 
                 continue
             else:
                 expected_seq += 1
+                expected_seq %= 1 << 16
 
             self.logger.debug(f"Processing RTP packet with seq {seq}")
             chunk = bytes.fromhex(packet["RTP"].payload.raw_value)
