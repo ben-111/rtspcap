@@ -49,7 +49,7 @@ def get_media_format_specific_config(sdp_media) -> Dict[str, str]:
             config = fmtp_data["config"]
             parameters = config.split("; ")
             for parameter in parameters:
-                key, value = parameter.split("=")
+                key, value = parameter.split("=", 1)
                 config_dict[key] = value
     if "type" in sdp_media and sdp_media["type"] == "audio":
         if (
