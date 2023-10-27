@@ -75,7 +75,7 @@ def _get_mpeg4_codec_context(sdp_media: dict) -> CodecContext:
     return codec_ctx
 
 
-_H264_STARTING_SEQUENCE = b"\x00\x00\x00\x01"
+H264_STARTING_SEQUENCE = b"\x00\x00\x00\x01"
 _H264_INPUT_BUFFER_PADDING_SIZE = 64
 
 
@@ -88,7 +88,7 @@ def _get_h264_codec_context(sdp_media: dict) -> CodecContext:
     extradata = b""
     for sprop_parameter_set in fmtp["sprop-parameter-sets"].split(","):
         extradata += (
-            _H264_STARTING_SEQUENCE
+            H264_STARTING_SEQUENCE
             + b64decode(sprop_parameter_set)
             + (b"\x00" * _H264_INPUT_BUFFER_PADDING_SIZE)
         )
