@@ -40,6 +40,7 @@ class RTPDecoder:
         rtp_stream = filter(lambda x: "RTP" in x, rtp_capture)
         try:
             expected_seq = int(next(rtp_stream)["RTP"].seq) + 1
+            self.logger.debug(f"First seq is {expected_seq-1}")
         except StopIteration:
             raise ValueError("RTP stream not found")
 
@@ -51,11 +52,12 @@ class RTPDecoder:
                     packet = next(rtp_stream)
             except StopIteration:
                 if out_of_order_packets:
-                    self.logger.debug(
-                        "Out of order packet found after the end of the pcap file; Appending to the end"
-                    )
                     earliest_packet = min(out_of_order_packets.keys())
                     packet = out_of_order_packets.pop(earliest_packet)
+                    expected_seq = int(packet["RTP"].seq)
+                    self.logger.debug(
+                        f"Out of order packet with seq {expected_seq} found after the end of the pcap file; Appending to the end"
+                    )
                 else:
                     break
 
@@ -72,6 +74,7 @@ class RTPDecoder:
             else:
                 expected_seq += 1
 
+            self.logger.debug(f"Processing RTP packet with seq {seq}")
             chunk = bytes.fromhex(packet["RTP"].payload.raw_value)
             out_packets = input_codec_ctx.parse(chunk)
             for out_packet in out_packets:
