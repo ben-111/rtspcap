@@ -77,8 +77,10 @@ class RTPDecoder:
             self.logger.debug(f"Processing RTP packet with seq {seq}")
             chunk = bytes.fromhex(packet["RTP"].payload.raw_value)
             out_packets = input_codec_ctx.parse(chunk)
+            self.logger.debug(f'Parsed {len(out_packets)} packets from chunk of size {len(chunk)}')
             for out_packet in out_packets:
                 frames = input_codec_ctx.decode(out_packet)
+                self.logger.debug(f'Decoded {len(frames)} frames')
                 for frame in frames:
                     encoded_packet = stream.encode(frame)
                     self.container.mux(encoded_packet)
