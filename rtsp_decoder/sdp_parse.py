@@ -50,7 +50,7 @@ def _get_sdp_media_from_track_id(sdp_data, track_id: str):
 
 
 def _parse_fmtp(sdp_media: dict) -> Dict[str, str]:
-    fmtp_data: Dict[str, str] = dict()
+    fmtp_config: Dict[str, str] = dict()
     if "fmtp" in sdp_media and len(sdp_media["fmtp"]) > 0:
         fmtp_data = sdp_media["fmtp"][0]
         if "config" in fmtp_data:
@@ -58,8 +58,8 @@ def _parse_fmtp(sdp_media: dict) -> Dict[str, str]:
             parameters = config.split("; ")
             for parameter in parameters:
                 key, value = parameter.split("=", 1)
-                fmtp_data[key] = value
-    return fmtp_data
+                fmtp_config[key] = value
+    return fmtp_config
 
 
 def _get_mpeg4_codec_context(sdp_media: dict) -> CodecContext:
