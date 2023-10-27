@@ -4,9 +4,6 @@ from pyshark import FileCapture
 
 from rtsp_decoder.parse_rtsp import RTSPDataExtractor
 from rtsp_decoder.rtp_decoder import RTPDecoder
-from rtsp_decoder.sdp_utils import get_sdp_media_from_track_id
-from rtsp_decoder.sdp_utils import get_media_format_specific_config
-from rtsp_decoder.sdp_utils import translate_sdp_to_av_codec
 
 from typing import Dict, Optional
 
@@ -26,14 +23,10 @@ def main(input_path: str, output_path: Optional[str]) -> None:
 
     with RTPDecoder(output_path) as rtp_decoder:
         for track_id, track in rtsp_data.tracks.items():
-            sdp_media = get_sdp_media_from_track_id(rtsp_data.sdp, track_id)
-            codec = translate_sdp_to_av_codec(sdp_media["rtp"][0]["codec"])
-            rate = sdp_media["rtp"][0]["rate"]
-            config = get_media_format_specific_config(sdp_media)
             with FileCapture(
                 input_path, display_filter=f"rtp and {track.get_display_filter()}"
             ) as rtp_capture:
-                rtp_decoder.decode_stream(rtp_capture, config, codec, rate)
+                rtp_decoder.decode_stream(rtp_capture, rtsp_data.sdp, track_id)
 
 
 if __name__ == "__main__":

@@ -2,6 +2,8 @@ import av
 from pyshark import FileCapture
 from pyshark.packet.packet import Packet
 
+from rtsp_decoder.sdp_parse import get_codec_context
+
 from typing import Dict, Optional
 
 import logging
@@ -14,26 +16,19 @@ class RTPDecoder:
         self.container = av.open(output_path, "w")
         self.logger = logging.getLogger(__name__)
 
-    def decode_stream(
-        self, rtp_capture: FileCapture, config: Dict[str, str], codec: str, rate: int
-    ):
+    def decode_stream(self, rtp_capture: FileCapture, sdp: dict, track_id: str):
         """Assume rtp_capture is filtered so that all RTP packets we see are from the same stream"""
-        self.logger.info(f"Decoding Stream with codec: {codec}")
-        input_codec_ctx = av.codec.CodecContext.create(codec, "r")
-        if input_codec_ctx.type == "video":
+        codec_ctx = get_codec_context(sdp, track_id)
+        if codec_ctx is None:
+            raise ValueError(f"Unsupported codec")
+
+        self.logger.info(f"Decoding Stream with codec: {codec_ctx.name}")
+        if codec_ctx.type == "video":
             stream = self.container.add_stream("h264", rate=30)
-            if "config" in config:
-                input_codec_ctx.extradata = bytes.fromhex(config["config"])
-        # TODO: support audio
-        # elif input_codec_ctx.type == 'audio':
-        #     stream = self.container.add_stream('aac')
-        #     input_codec_ctx.rate = rate
-        #     input_codec_ctx.channels = config['channels']
+        elif codec_ctx.type == "audio":
+            stream = self.container.add_stream("aac")
         else:
-            self.logger.warning(
-                f"Unsupported stream type: {input_codec_ctx.type}, with codec: {codec}, skipping"
-            )
-            return
+            raise ValueError(f"Unexpected codec type: {codec_ctx.type}")
 
         out_of_order_packets: Dict[int, Packet] = dict()
         expected_seq = None
@@ -76,11 +71,13 @@ class RTPDecoder:
 
             self.logger.debug(f"Processing RTP packet with seq {seq}")
             chunk = bytes.fromhex(packet["RTP"].payload.raw_value)
-            out_packets = input_codec_ctx.parse(chunk)
-            self.logger.debug(f'Parsed {len(out_packets)} packets from chunk of size {len(chunk)}')
+            out_packets = codec_ctx.parse(chunk)
+            self.logger.debug(
+                f"Parsed {len(out_packets)} packets from chunk of size {len(chunk)}"
+            )
             for out_packet in out_packets:
-                frames = input_codec_ctx.decode(out_packet)
-                self.logger.debug(f'Decoded {len(frames)} frames')
+                frames = codec_ctx.decode(out_packet)
+                self.logger.debug(f"Decoded {len(frames)} frames")
                 for frame in frames:
                     encoded_packet = stream.encode(frame)
                     self.container.mux(encoded_packet)
