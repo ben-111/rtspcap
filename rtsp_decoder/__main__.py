@@ -2,8 +2,8 @@ import argparse
 import logging
 from pyshark import FileCapture
 
-from rtsp_decoder.parse_rtsp import RTSPDataExtractor
-from rtsp_decoder.rtp_decoder import RTPDecoder
+from rtsp_decoder.rtsp import RTSPDataExtractor
+from rtsp_decoder.rtp import RTPDecoder
 
 from typing import Dict, Optional
 

@@ -7,8 +7,8 @@ from av.packet import Packet as AVPacket
 from pyshark import FileCapture
 from pyshark.packet.packet import Packet
 
-from rtsp_decoder.sdp_parse import get_codec_context
-from rtsp_decoder.sdp_parse import H264_STARTING_SEQUENCE
+from rtsp_decoder.sdp import get_codec_context
+from rtsp_decoder.sdp import H264_STARTING_SEQUENCE
 
 from typing import Dict, Optional, List
 
