@@ -1,12 +1,12 @@
 from av.codec import CodecContext
 
-from rtsp_decoder.codecs.sdp_common import CodecSDPParser, parse_fmtp
+from rtsp_decoder.codecs.codec_base import CodecBase
 
 
-class MPEG4SDPParser(CodecSDPParser):
+class CodecMPEG4(CodecBase):
     @staticmethod
     def get_codec_context(sdp_media: dict) -> CodecContext:
-        fmtp = parse_fmtp(sdp_media)
+        fmtp = CodecBase._parse_fmtp(sdp_media)
         assert "config" in fmtp, "Expected config in fmtp of mpeg4"
 
         codec_ctx = CodecContext.create("mpeg4", "r")

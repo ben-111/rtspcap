@@ -1,9 +1,7 @@
 from av.codec import CodecContext
 import logging
 
-from rtsp_decoder.codecs.sdp_common import CodecSDPParser
-from rtsp_decoder.codecs.mpeg4 import MPEG4SDPParser
-from rtsp_decoder.codecs.h264 import H264SDPParser
+from rtsp_decoder.codecs.stream_codec import StreamCodec
 
 from typing import Dict, Optional
 
@@ -36,7 +34,7 @@ _SDP_CODEC_TO_AV_CODEC = {
 }
 
 
-def _get_codec_from_sdp_media(sdp_media: dict) -> str:
+def _get_codec_name_from_sdp_media(sdp_media: dict) -> str:
     codec_name = sdp_media["rtp"][0]["codec"]
     normalized_codec_name = codec_name.casefold()
     if normalized_codec_name not in _SDP_CODEC_TO_AV_CODEC:
@@ -52,18 +50,14 @@ def _get_sdp_media_from_track_id(sdp_data, track_id: str):
     raise KeyError("No such track ID in SDP provided")
 
 
-_CODEC_SDP_PARSERS: Dict[str, CodecSDPParser] = {
-    "mpeg4": MPEG4SDPParser,
-    "h264": H264SDPParser,
-}
-
-
-def get_codec_context(sdp: dict, track_id: str) -> Optional[CodecContext]:
+def get_stream_codec(sdp: dict, track_id: str) -> Optional[StreamCodec]:
     sdp_media = _get_sdp_media_from_track_id(sdp, track_id)
-    codec = _get_codec_from_sdp_media(sdp_media)
-    if codec not in _CODEC_SDP_PARSERS:
-        logger.warning(f"Got unsupported codec: {codec}")
-        return
+    codec_name = _get_codec_name_from_sdp_media(sdp_media)
+    stream_codec = None
 
-    codec_sdp_parser = _CODEC_SDP_PARSERS[codec]
-    return codec_sdp_parser.get_codec_context(sdp_media)
+    try:
+        stream_codec = StreamCodec(codec_name, sdp_media)
+    except KeyError as e:
+        logger.warning(str(e))
+
+    return stream_codec

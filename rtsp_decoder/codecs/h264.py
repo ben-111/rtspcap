@@ -1,8 +1,7 @@
 from base64 import b64decode
 import logging
 
-from rtsp_decoder.codecs.sdp_common import CodecSDPParser, parse_fmtp
-from rtsp_decoder.codecs.rtp_common import CodecRTPDecoder
+from rtsp_decoder.codecs.codec_base import CodecBase
 
 from av.codec import CodecContext
 from av.packet import Packet as AVPacket
@@ -18,11 +17,11 @@ H264_STARTING_SEQUENCE = b"\x00\x00\x00\x01"
 _H264_INPUT_BUFFER_PADDING_SIZE = 64
 
 
-# Taken from ffmpeg: `rtpdec_h264.c:ff_h264_parse_sprop_parameter_sets`
-class H264SDPParser(CodecSDPParser):
+class CodecH264(CodecBase):
+    # Taken from ffmpeg: `rtpdec_h264.c:ff_h264_parse_sprop_parameter_sets`
     @staticmethod
     def get_codec_context(sdp_media: dict) -> CodecContext:
-        fmtp = parse_fmtp(sdp_media)
+        fmtp = CodecBase._parse_fmtp(sdp_media)
         assert (
             "sprop-parameter-sets" in fmtp
         ), "Expected sprop-parameter-sets in fmtp of h264"
@@ -36,9 +35,7 @@ class H264SDPParser(CodecSDPParser):
         codec_ctx.extradata = extradata
         return codec_ctx
 
-
-# Taken from ffmpeg: `rtpdec_h264.c:h264_handle_packet`
-class H264RTPDecoder(CodecRTPDecoder):
+    # Taken from ffmpeg: `rtpdec_h264.c:h264_handle_packet`
     @staticmethod
     def handle_packet(
         codec_ctx: CodecContext,
@@ -61,10 +58,10 @@ class H264RTPDecoder(CodecRTPDecoder):
             out_packets = codec_ctx.parse(H264_STARTING_SEQUENCE + buf)
         elif nal_type == 24:
             # One packet, multiple NALs
-            out_packets = H264RTPDecoder._handle_aggregated_packet(codec_ctx, buf[1:])
+            out_packets = CodecH264._handle_aggregated_packet(codec_ctx, buf[1:])
         elif nal_type == 28:
             # Fragmented NAL
-            out_packets = H264RTPDecoder._handle_fu_a_packet(codec_ctx, buf)
+            out_packets = CodecH264._handle_fu_a_packet(codec_ctx, buf)
         else:
             logger.error(f"Got H264 RTP packet with unsupported NAL type: {nal_type}")
 
