@@ -8,9 +8,11 @@ from pyshark import FileCapture
 from pyshark.packet.packet import Packet
 
 from rtsp_decoder.sdp import get_codec_context
-from rtsp_decoder.sdp import H264_STARTING_SEQUENCE
 
-from typing import Dict, Optional, List
+from rtsp_decoder.codecs.rtp_common import CodecRTPDecoder
+from rtsp_decoder.codecs.h264 import H264RTPDecoder
+
+from typing import Dict, List
 
 import logging
 
@@ -21,8 +23,8 @@ class RTPDecoder:
     def __init__(self, output_path: str):
         self.container = av.open(output_path, "w")
         self.logger = logging.getLogger(__name__)
-        self._codec_specific_rtp_packet_handlers = {
-            "h264": self._h264_rtp_packet_handler
+        self._codec_specific_rtp_decoders: Dict[str, CodecRTPDecoder] = {
+            "h264": H264RTPDecoder
         }
 
     def decode_stream(self, rtp_capture: FileCapture, sdp: dict, track_id: str):
@@ -32,11 +34,12 @@ class RTPDecoder:
             self.logger.warning(f"Skipping unsupported codec")
             return
 
-        self.logger.info(f"Decoding Stream with codec: {codec_ctx.name}")
+        self.logger.info(f"Decoding stream with codec: {codec_ctx.name}")
         if codec_ctx.type == "video":
             stream = self.container.add_stream("h264", rate=30)
         elif codec_ctx.type == "audio":
-            self.logger.warning(f"Audio ")
+            self.logger.warning(f"Audio is not implemented")
+            return
             # stream = self.container.add_stream("aac")
         else:
             raise ValueError(f"Unexpected codec type: {codec_ctx.type}")
@@ -102,10 +105,10 @@ class RTPDecoder:
         packet: Packet,
     ) -> None:
         """For some codecs we need special treatment"""
-        out_packets = []
-        if codec_ctx.name in self._codec_specific_rtp_packet_handlers:
-            handler = self._codec_specific_rtp_packet_handlers[codec_ctx.name]
-            out_packets = handler(codec_ctx, packet)
+        out_packets: List[AVPacket] = []
+        if codec_ctx.name in self._codec_specific_rtp_decoders:
+            codec_rtp_decoder = self._codec_specific_rtp_decoders[codec_ctx.name]
+            out_packets = codec_rtp_decoder.handle_packet(codec_ctx, packet)
         else:
             chunk = bytes.fromhex(packet["RTP"].payload.raw_value)
             out_packets = codec_ctx.parse(chunk)
@@ -116,84 +119,7 @@ class RTPDecoder:
             self.logger.debug(f"Decoded {len(frames)} frames")
             for frame in frames:
                 encoded_packet = stream.encode(frame)
-                self.container.mux(encoded_packet)
-
-    # Taken from ffmpeg: `rtpdec_h264.c:h264_handle_packet`
-    def _h264_rtp_packet_handler(
-        self,
-        codec_ctx: CodecContext,
-        packet: Packet,
-    ) -> List[AVPacket]:
-        buf = bytes.fromhex(packet["RTP"].payload.raw_value)
-        if len(buf) == 0:
-            self.logger.error(f"RTP h264 invalid data")
-            return
-
-        nal = buf[0]
-        nal_type = nal & 0x1F
-
-        if nal_type >= 1 and nal_type <= 23:
-            nal_type = 1
-
-        self.logger.debug(f"Parsing H264 RTP packet with NAL type {nal_type}")
-        out_packets = []
-        if nal_type == 0 or nal_type == 1:
-            out_packets = codec_ctx.parse(H264_STARTING_SEQUENCE + buf)
-        elif nal_type == 24:
-            # One packet, multiple NALs
-            out_packets = self._handle_aggregated_h264_rtp_packet(codec_ctx, buf[1:])
-        elif nal_type == 28:
-            # Fragmented NAL
-            out_packets = self._handle_fu_a_h264_rtp_packet(codec_ctx, buf)
-        else:
-            self.logger.error(
-                f"Got H264 RTP packet with unsupported NAL type: {nal_type}"
-            )
-
-        return out_packets
-
-    def _handle_fu_a_h264_rtp_packet(
-        self, codec_ctx: CodecContext, buf: bytes
-    ) -> List[AVPacket]:
-        if len(buf) < 3:
-            self.logger.error("Too short data for FU-A H.264 RTP packet")
-            return []
-
-        fu_indicator = buf[0]
-        fu_header = buf[1]
-        start_bit = fu_header >> 7
-        nal_type = fu_header & 0x1F
-        nal = fu_indicator & 0xE0 | nal_type
-
-        buf = buf[2:]
-        buffer_to_parse = b""
-        if start_bit:
-            buffer_to_parse += H264_STARTING_SEQUENCE
-            buffer_to_parse += nal.to_bytes(1, byteorder="little")
-        buffer_to_parse += buf
-
-        return codec_ctx.parse(buffer_to_parse)
-
-    def _handle_aggregated_h264_rtp_packet(
-        self, codec_ctx: CodecContext, buf: bytes
-    ) -> List[AVPacket]:
-        """
-        An aggregated packet is an array of NAL units.
-        A NAL unit is a `uint16 nal_size` followed by a buffer of that size
-        """
-        out_packets = []
-        while len(buf) > 2:
-            nal_size_bytes = buf[:2]
-            nal_size = int.from_bytes(nal_size_bytes, byteorder="little")
-            buf = buf[2:]
-            if nal_size <= len(buf):
-                out_packets += codec_ctx.parse(H264_STARTING_SEQUENCE + buf[:nal_size])
-                buf = buf[nal_size:]
-            else:
-                self.logger.error(f"nal size exceeds length: {nal_size} > {len(buf)}")
-                break
-
-        return out_packets
+                container.mux(encoded_packet)
 
     def close(self):
         self.container.close()

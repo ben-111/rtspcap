@@ -1,5 +1,4 @@
 from os.path import basename
-from enum import Enum
 from urllib.parse import urlparse
 
 from pyshark import FileCapture
