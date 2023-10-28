@@ -141,8 +141,7 @@ class RTPDecoder:
             out_packets = codec_ctx.parse(H264_STARTING_SEQUENCE + buf)
         elif nal_type == 24:
             # One packet, multiple NALs
-            # FIXME: implement this
-            self.logger.error("NAL type 24 not supported yet")
+            out_packets = self._handle_aggregated_h264_rtp_packet(codec_ctx, buf[1:])
         elif nal_type == 28:
             # Fragmented NAL
             out_packets = self._handle_fu_a_h264_rtp_packet(codec_ctx, buf)
@@ -153,7 +152,9 @@ class RTPDecoder:
 
         return out_packets
 
-    def _handle_fu_a_h264_rtp_packet(self, codec_ctx: CodecContext, buf: bytes):
+    def _handle_fu_a_h264_rtp_packet(
+        self, codec_ctx: CodecContext, buf: bytes
+    ) -> List[AVPacket]:
         if len(buf) < 3:
             self.logger.error("Too short data for FU-A H.264 RTP packet")
             return []
@@ -172,6 +173,27 @@ class RTPDecoder:
         buffer_to_parse += buf
 
         return codec_ctx.parse(buffer_to_parse)
+
+    def _handle_aggregated_h264_rtp_packet(
+        self, codec_ctx: CodecContext, buf: bytes
+    ) -> List[AVPacket]:
+        """
+        An aggregated packet is an array of NAL units.
+        A NAL unit is a `uint16 nal_size` followed by a buffer of that size
+        """
+        out_packets = []
+        while len(buf) > 2:
+            nal_size_bytes = buf[:2]
+            nal_size = int.from_bytes(nal_size_bytes, byteorder="little")
+            buf = buf[2:]
+            if nal_size <= len(buf):
+                out_packets += codec_ctx.parse(H264_STARTING_SEQUENCE + buf[:nal_size])
+                buf = buf[nal_size:]
+            else:
+                self.logger.error(f"nal size exceeds length: {nal_size} > {len(buf)}")
+                break
+
+        return out_packets
 
     def close(self):
         self.container.close()
