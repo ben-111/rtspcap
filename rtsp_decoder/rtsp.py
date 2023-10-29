@@ -20,7 +20,7 @@ class RTSPTransportHeader(NamedTuple):
         options = dict()
         for option in transport_header_values[1:]:
             key, value = option.split("=", 1) if "=" in option else (option, None)
-            options[key] = value
+            options[key.casefold()] = value
 
         return cls(protocol=protocol, options=options)
 
@@ -29,6 +29,7 @@ class TransportInformation(NamedTuple):
     transport_header: RTSPTransportHeader
     server_ip: str
     client_ip: str
+    rtsp_tcp_stream_num: int
 
 
 class RTSPTrack(NamedTuple):
@@ -130,11 +131,12 @@ class RTSPDataExtractor:
         track_id = request["RTSP"].url
         transport_header = RTSPTransportHeader.parse(response["RTSP"].transport)
 
-        assert "IP" in response
+        assert "IP" in response, "TCP" in response
         transport_info = TransportInformation(
             transport_header=transport_header,
             server_ip=response["IP"].src,
             client_ip=response["IP"].dst,
+            rtsp_tcp_stream_num=response["TCP"].stream,
         )
 
         return track_id, transport_info

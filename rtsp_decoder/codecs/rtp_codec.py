@@ -23,7 +23,7 @@ class RTPCodec(TransportCodecBase):
     def __init__(self, codec_name: str, sdp_media: dict):
         codec_name = codec_name.casefold()
         if codec_name not in self._CODEC_MAP:
-            raise KeyError(f"Codec {codec_name} not implemented")
+            raise ValueError(f"Codec {codec_name} not implemented")
 
         self._codec_name = codec_name
         self._codec = self._CODEC_MAP[self.codec_name]

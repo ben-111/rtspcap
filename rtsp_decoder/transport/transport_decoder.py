@@ -11,7 +11,7 @@ class RTSPTransportDecoder:
     _DECODER_MAP: Dict[str, TransportBase] = {
         "rtp/avp": RTPDecoder,
         "rtp/avp/udp": RTPDecoder,
-        # "rtp/avp/tcp": RTPOverTCPDecoder,
+        "rtp/avp/tcp": RTPOverTCPDecoder,
     }
 
     def __init__(self, transport_info: TransportInformation, output_path: str):

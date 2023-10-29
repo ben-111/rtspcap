@@ -15,10 +15,6 @@ from typing import Optional, Iterator
 
 class TransportBase(ABC):
     @abstractmethod
-    def close(self) -> None:
-        ...
-
-    @abstractmethod
     def _iterate_packets(self, pcap_path: str) -> Iterator[Packet]:
         ...
 
@@ -65,3 +61,6 @@ class TransportBase(ABC):
     def _flush_encoder(self, container: Container, out_stream: Stream) -> None:
         out_packet = out_stream.encode(None)
         self.container.mux(out_packet)
+
+    def close(self) -> None:
+        self.container.close()

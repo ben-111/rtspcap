@@ -29,7 +29,7 @@ def get_stream_codec(
 
     try:
         stream_codec = StreamCodec(transport_protocol, codec_name, sdp_media)
-    except KeyError as e:
+    except ValueError as e:
         logger.warning(str(e))
 
     return stream_codec
