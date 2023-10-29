@@ -6,6 +6,7 @@ from pyshark.packet.packet import Packet
 
 from rtsp_decoder.codecs.transport_codec_base import TransportCodecBase
 from rtsp_decoder.codecs.rtp_codec import RTPCodec
+from rtsp_decoder.codecs.rtptcp_codec import RTPOverTCPCodec
 
 from typing import List, Dict, Optional
 
@@ -14,7 +15,7 @@ class StreamCodec:
     _TRANSPORT_CODEC_MAP: Dict[str, TransportCodecBase] = {
         "rtp/avp": RTPCodec,
         "rtp/avp/udp": RTPCodec,
-        "rtp/avp/tcp": RTPCodec,
+        "rtp/avp/tcp": RTPOverTCPCodec,
     }
 
     def __init__(self, transport_protocol: str, codec_name: str, sdp_media: dict):

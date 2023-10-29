@@ -1,31 +1,18 @@
-import av
-from av.container import Container
-from av.stream import Stream
-from av.codec import CodecContext
-from av.packet import Packet as AVPacket
-
 from pyshark import FileCapture
 from pyshark.packet.packet import Packet
 
 from rtsp_decoder.transport.transport_base import TransportBase
 from rtsp_decoder.rtsp import TransportInformation
-from rtsp_decoder.sdp import get_stream_codec
 
-from rtsp_decoder.codecs.stream_codec import StreamCodec
-
-from typing import Dict, List, Optional
-
-import logging
+from typing import Dict, Iterator
 
 
 class RTPDecoder(TransportBase):
     MAX_OUT_OF_ORDER_PACKETS = 50
 
     def __init__(self, transport_info: TransportInformation, output_path: str):
-        self._protocol = transport_info.transport_header.protocol
+        super().__init__(transport_info, output_path)
         self._display_filter = self._build_display_filter(transport_info)
-        self.container = av.open(output_path, "w")
-        self.logger = logging.getLogger(__name__)
 
     def _build_display_filter(self, transport_info: TransportInformation) -> str:
         transport_header = transport_info.transport_header
@@ -41,22 +28,8 @@ class RTPDecoder(TransportBase):
         display_filter += f"udp.dstport == {client_port}"
         return display_filter
 
-    def decode_stream(self, pcap_path: str, sdp: dict, track_id: str):
-        """Assume rtp_capture is filtered so that all RTP packets we see are from the same stream"""
+    def _iterate_packets(self, pcap_path: str) -> Iterator[Packet]:
         rtp_capture = FileCapture(pcap_path, display_filter=self._display_filter)
-        stream_codec = get_stream_codec(self._protocol, sdp, track_id)
-        if stream_codec is None:
-            self.logger.warning(f"Skipping unsupported codec")
-            return
-
-        self.logger.info(f"Decoding stream with codec: {stream_codec.codec_name}")
-        if stream_codec.codec_type == "video":
-            out_stream = self.container.add_stream("h264", rate=30)
-        elif stream_codec.codec_type == "audio":
-            out_stream = self.container.add_stream("aac")
-        else:
-            raise ValueError(f"Unexpected codec type: {stream_codec.codec_type}")
-
         out_of_order_packets: Dict[int, Packet] = dict()
         expected_seq = None
         try:
@@ -104,28 +77,10 @@ class RTPDecoder(TransportBase):
                 expected_seq %= 1 << 16
 
             self.logger.debug(f"Processing RTP packet with seq {seq}")
-            self._handle_rtp_packet(self.container, out_stream, stream_codec, packet)
+            yield packet
 
-        # Flush the encoder
-        self._handle_rtp_packet(self.container, out_stream, stream_codec, None)
-        out_packet = out_stream.encode(None)
-        self.container.mux(out_packet)
-
-    def _handle_rtp_packet(
-        self,
-        container: Container,
-        out_stream: Stream,
-        stream_codec: StreamCodec,
-        packet: Optional[Packet],
-    ) -> None:
-        out_packets = stream_codec.handle_packet(packet)
-        self.logger.debug(f"Parsed {len(out_packets)} packets")
-        for out_packet in out_packets:
-            frames = stream_codec.decode(out_packet)
-            self.logger.debug(f"Decoded {len(frames)} frames")
-            for frame in frames:
-                encoded_packet = out_stream.encode(frame)
-                container.mux(encoded_packet)
+        # Flush the decoder
+        yield None
 
     def close(self):
         self.container.close()

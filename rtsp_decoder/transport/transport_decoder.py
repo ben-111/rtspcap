@@ -2,6 +2,7 @@ from rtsp_decoder.rtsp import TransportInformation
 
 from rtsp_decoder.transport.transport_base import TransportBase
 from rtsp_decoder.transport.rtp import RTPDecoder
+from rtsp_decoder.transport.rtptcp import RTPOverTCPDecoder
 
 from typing import Dict
 
