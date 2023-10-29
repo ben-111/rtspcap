@@ -55,11 +55,12 @@ class RTSPDataExtractor:
             except StopIteration:
                 raise ValueError("Could not find RTSP stream")
 
+        assert "IP" in first_rtsp, "TCP" in first_rtsp
         self.logger.debug(
-            f"Found RTSP stream: {first_rtsp.ip.src}:{first_rtsp.tcp.srcport}"
-            + f" <--> {first_rtsp.ip.dst}:{first_rtsp.tcp.dstport}"
+            f"Found RTSP stream: {first_rtsp['IP'].src}:{first_rtsp['TCP'].srcport}"
+            + f" <--> {first_rtsp['IP'].dst}:{first_rtsp['TCP'].dstport}"
         )
-        tcp_stream = first_rtsp.tcp.stream
+        tcp_stream = first_rtsp["TCP"].stream
 
         # We disable sdp so we can access the SDP data directly
         with FileCapture(
@@ -96,7 +97,11 @@ class RTSPDataExtractor:
     def _get_sdp(self, capture: FileCapture) -> Tuple[str, dict]:
         while True:
             request = capture.next()
-            if hasattr(request.rtsp, "method") and request.rtsp.method == "DESCRIBE":
+            if (
+                "RTSP" in request
+                and request["RTSP"].has_field("method")
+                and request["RTSP"].method == "DESCRIBE"
+            ):
                 break
 
         response = capture.next()
@@ -107,15 +112,20 @@ class RTSPDataExtractor:
     def _get_track(self, capture: FileCapture) -> Dict[str, RTSPTrack]:
         while True:
             request = capture.next()
-            if hasattr(request.rtsp, "method") and request.rtsp.method == "SETUP":
-                break
+            if (
+                "RTSP" in request
+                and request["RTSP"].has_field("method")
+                and request["RTSP"].method == "SETUP"
+            ):
+                response = capture.next()
+                if "RTSP" in response and response["RTSP"].has_field("transport"):
+                    break
 
-        response = capture.next()
-        track_id = request.rtsp.url
-        transport = RTSPTransportHeader.parse(response.rtsp.transport)
+        track_id = request["RTSP"].url
+        transport = RTSPTransportHeader.parse(response["RTSP"].transport)
         assert (
             transport.protocol == "RTP/AVP"
-        ), f"Only RTP/AVP is supported, Got {transport_protocol}"
+        ), f"Only RTP/AVP is supported, Got {transport.protocol}"
         server_ip = str(response.ip.src)
         client_port, _ = transport.options["client_port"].split("-", 1)
         server_port, _ = transport.options["server_port"].split("-", 1)
