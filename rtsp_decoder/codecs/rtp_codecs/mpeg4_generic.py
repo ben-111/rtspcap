@@ -199,33 +199,28 @@ class RTPCodecMPEG4_GENERIC(RTPCodecBase):
 
         buf = bytes.fromhex(packet["RTP"].payload.raw_value)
         try:
-            cls._parse_mp4_au_headers(aac_ctx, buf)
+            au_headers, au_headers_section_size = cls._parse_mp4_au_headers(
+                aac_ctx, buf
+            )
         except ValueError as e:
             logger.error(f"Error parsing AU headers: {str(e)}")
             return out_packets
 
-        buf = buf[aac_ctx.au_headers_length_bytes + 2 :]
-        if len(aac_ctx.au_headers) == 1 and len(buf) < aac_ctx.au_headers[0].size:
+        buf = buf[au_headers_section_size:]
+        if len(au_headers) == 1 and len(buf) < au_headers[0].size:
             # Packet is fragmented
             logger.debug(f"Fragmented AU")
             return cls._handle_fragmented_packet(aac_ctx, packet, buf)
 
         # Assuming no auxiliiary section
         logger.debug(f"Data section size: {len(buf)}")
-        aus = []
-        for au_header in aac_ctx.au_headers:
+        for au_header in au_headers:
             if len(buf) < au_header.size:
                 logger.error("AU larger than packet size")
                 return out_packets
 
             data = buf[: au_header.size]
             buf = buf[au_header.size :]
-            aus.append((au_header.index, data))
-
-        aac_ctx.au_headers.clear()
-        aus.sort(key=lambda x: x[0])
-
-        for au in aus:
             out_packets += codec_ctx.parse(data)
 
         # buf = buf[aac_ctx.au_headers[0].size :]
@@ -302,7 +297,9 @@ class RTPCodecMPEG4_GENERIC(RTPCodecBase):
         return out_packets
 
     @classmethod
-    def _parse_mp4_au_headers(cls, aac_ctx: AACContext, buf: bytes) -> None:
+    def _parse_mp4_au_headers(
+        cls, aac_ctx: AACContext, buf: bytes
+    ) -> Tuple[List[AUHeader], int]:
         """
         When present, the AU Header Section consists of the AU-headers-length
         field, followed by a number of AU-headers.
@@ -314,6 +311,8 @@ class RTPCodecMPEG4_GENERIC(RTPCodecBase):
 
         The AU-headers-length is a two octet field that specifies the length in bits
         of the immediately following AU-headers, excluding the padding bits.
+
+        returns: List of AU headers, size of AU-Headers-Section in bytes.
         """
         if len(buf) < 2:
             raise ValueError("Invalid Data")
@@ -324,18 +323,16 @@ class RTPCodecMPEG4_GENERIC(RTPCodecBase):
         logger.debug(f"AU headers length in bits: {au_headers_length_in_bits}")
 
         # Calculate size of AU headers including the padding bits
-        aac_ctx.au_headers_length_bytes = (au_headers_length_in_bits + 7) // 8
-        if aac_ctx.au_headers_length_bytes > MAX_RTP_PACKET_LENGTH:
+        au_headers_length_bytes = (au_headers_length_in_bits + 7) // 8
+        if au_headers_length_bytes > MAX_RTP_PACKET_LENGTH:
             raise ValueError("Invalid AU headers length")
 
-        logger.debug(
-            f"Total size of AU-Headers section is {2 + aac_ctx.au_headers_length_bytes} bytes"
-        )
+        au_headers_section_size = 2 + au_headers_length_bytes
 
-        if len(buf) < aac_ctx.au_headers_length_bytes:
+        if len(buf) < au_headers_length_bytes:
             raise ValueError("Invalid Data")
 
-        get_bit_context = GetBitContext(buf[: aac_ctx.au_headers_length_bytes])
+        get_bit_context = GetBitContext(buf[:au_headers_length_bytes])
 
         # Assuming only sizelength and indexlength fields exist in each AU header
         # and that indexlength == indexdeltalength
@@ -353,6 +350,7 @@ class RTPCodecMPEG4_GENERIC(RTPCodecBase):
 
         number_of_au_headers = au_headers_length_in_bits // au_header_size_in_bits
         current_index = 0
+        au_headers = []
         for i in range(number_of_au_headers):
             size = get_bit_context.get_bits(aac_ctx.attributes["sizelength"])
             index = get_bit_context.get_bits(aac_ctx.attributes["indexlength"])
@@ -365,4 +363,6 @@ class RTPCodecMPEG4_GENERIC(RTPCodecBase):
             au_header = AUHeader(size=size, index=current_index)
             logger.debug(f"Found AU Header: {au_header}")
 
-            aac_ctx.au_headers.append(au_header)
+            au_headers.append(au_header)
+
+        return au_headers, au_headers_section_size
