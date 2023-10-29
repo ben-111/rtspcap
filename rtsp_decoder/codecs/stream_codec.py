@@ -16,7 +16,7 @@ class StreamCodec:
     _CODEC_MAP: Dict[str, CodecBase] = {
         "h264": CodecH264,
         "mp4v-es": CodecMP4V_ES,
-        "mpeg4-generic": CodecMPEG4_GENERIC,
+        # "mpeg4-generic": CodecMPEG4_GENERIC,
     }
 
     def __init__(self, codec_name: str, sdp_media: dict):
