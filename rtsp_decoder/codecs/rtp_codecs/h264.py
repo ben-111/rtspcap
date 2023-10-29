@@ -1,7 +1,7 @@
 from base64 import b64decode
 import logging
 
-from rtsp_decoder.codecs.codec_base import CodecBase
+from rtsp_decoder.codecs.rtp_codecs.rtp_codec_base import RTPCodecBase
 
 from av.codec import CodecContext
 from av.packet import Packet as AVPacket
@@ -17,13 +17,13 @@ H264_STARTING_SEQUENCE = b"\x00\x00\x00\x01"
 _H264_INPUT_BUFFER_PADDING_SIZE = 64
 
 
-class CodecH264(CodecBase):
+class RTPCodecH264(RTPCodecBase):
     AV_CODEC_NAME = "h264"
 
     # Taken from ffmpeg: `rtpdec_h264.c:ff_h264_parse_sprop_parameter_sets`
     @classmethod
     def get_codec_context(cls, sdp_media: dict) -> Tuple[CodecContext, Any]:
-        fmtp = CodecBase._parse_fmtp(sdp_media)
+        fmtp = RTPCodecBase._parse_fmtp(sdp_media)
         assert (
             "sprop-parameter-sets" in fmtp
         ), "Expected sprop-parameter-sets in fmtp of h264"

@@ -4,38 +4,36 @@ from av.frame import Frame
 
 from pyshark.packet.packet import Packet
 
-from rtsp_decoder.codecs.codec_base import CodecBase
-from rtsp_decoder.codecs.h264 import CodecH264
-from rtsp_decoder.codecs.mp4v_es import CodecMP4V_ES
-from rtsp_decoder.codecs.mpeg4_generic import CodecMPEG4_GENERIC
+from rtsp_decoder.codecs.transport_codec_base import TransportCodecBase
+from rtsp_decoder.codecs.rtp_codec import RTPCodec
 
 from typing import List, Dict, Optional
 
 
 class StreamCodec:
-    _CODEC_MAP: Dict[str, CodecBase] = {
-        "h264": CodecH264,
-        "mp4v-es": CodecMP4V_ES,
-        # "mpeg4-generic": CodecMPEG4_GENERIC,
+    _TRANSPORT_CODEC_MAP: Dict[str, TransportCodecBase] = {
+        "rtp/avp": RTPCodec,
+        "rtp/avp/udp": RTPCodec,
+        "rtp/avp/tcp": RTPCodec,
     }
 
-    def __init__(self, codec_name: str, sdp_media: dict):
-        codec_name = codec_name.casefold()
-        if codec_name not in self._CODEC_MAP:
-            raise KeyError(f"Codec {codec_name} not implemented")
+    def __init__(self, transport_protocol: str, codec_name: str, sdp_media: dict):
+        transport_proto = transport_protocol.casefold()
+        if transport_proto not in self._TRANSPORT_CODEC_MAP:
+            raise KeyError(f"Codecs for transport {transport_proto} not implemented")
 
-        self.codec_name = codec_name
-        self._codec = self._CODEC_MAP[self.codec_name]
-        self._codec_ctx, self._payload_context = self._codec.get_codec_context(
-            sdp_media
+        self.transport_proto = transport_proto
+        self._transport_codec = self._TRANSPORT_CODEC_MAP[self.transport_proto](
+            codec_name, sdp_media
         )
-        self.codec_type = self._codec_ctx.type
+        self.codec_name = self._transport_codec.codec_name
+        self.codec_type = self._transport_codec.codec_type
 
     def handle_packet(
         self,
         packet: Packet,
     ) -> List[AVPacket]:
-        return self._codec.handle_packet(self._codec_ctx, packet, self._payload_context)
+        return self._transport_codec.handle_packet(packet)
 
     def decode(self, av_packet: Optional[AVPacket] = None) -> List[Frame]:
-        return self._codec_ctx.decode(av_packet)
+        return self._transport_codec.decode(av_packet)

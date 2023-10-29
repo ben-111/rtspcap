@@ -22,6 +22,7 @@ class RTPDecoder(TransportBase):
     MAX_OUT_OF_ORDER_PACKETS = 50
 
     def __init__(self, transport_info: TransportInformation, output_path: str):
+        self._protocol = transport_info.transport_header.protocol
         self._display_filter = self._build_display_filter(transport_info)
         self.container = av.open(output_path, "w")
         self.logger = logging.getLogger(__name__)
@@ -43,7 +44,7 @@ class RTPDecoder(TransportBase):
     def decode_stream(self, pcap_path: str, sdp: dict, track_id: str):
         """Assume rtp_capture is filtered so that all RTP packets we see are from the same stream"""
         rtp_capture = FileCapture(pcap_path, display_filter=self._display_filter)
-        stream_codec = get_stream_codec(sdp, track_id)
+        stream_codec = get_stream_codec(self._protocol, sdp, track_id)
         if stream_codec is None:
             self.logger.warning(f"Skipping unsupported codec")
             return

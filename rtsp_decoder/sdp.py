@@ -20,13 +20,15 @@ def _get_sdp_media_from_track_id(sdp_data, track_id: str):
     raise KeyError("No such track ID in SDP provided")
 
 
-def get_stream_codec(sdp: dict, track_id: str) -> Optional[StreamCodec]:
+def get_stream_codec(
+    transport_protocol: str, sdp: dict, track_id: str
+) -> Optional[StreamCodec]:
     sdp_media = _get_sdp_media_from_track_id(sdp, track_id)
     codec_name = _get_codec_name_from_sdp_media(sdp_media)
     stream_codec = None
 
     try:
-        stream_codec = StreamCodec(codec_name, sdp_media)
+        stream_codec = StreamCodec(transport_protocol, codec_name, sdp_media)
     except KeyError as e:
         logger.warning(str(e))
 

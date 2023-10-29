@@ -1,16 +1,16 @@
 from av.codec import CodecContext
 
-from rtsp_decoder.codecs.codec_base import CodecBase
+from rtsp_decoder.codecs.rtp_codecs.rtp_codec_base import RTPCodecBase
 
 from typing import Tuple, Any
 
 
-class CodecMP4V_ES(CodecBase):
+class RTPCodecMP4V_ES(RTPCodecBase):
     AV_CODEC_NAME = "mpeg4"
 
     @classmethod
     def get_codec_context(cls, sdp_media: dict) -> Tuple[CodecContext, Any]:
-        fmtp = CodecBase._parse_fmtp(sdp_media)
+        fmtp = RTPCodecBase._parse_fmtp(sdp_media)
 
         codec_ctx = CodecContext.create(cls.AV_CODEC_NAME, "r")
         if "config" in fmtp:

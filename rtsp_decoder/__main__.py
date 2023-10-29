@@ -24,7 +24,7 @@ def main(input_path: str, output_path: Optional[str]) -> None:
     for track_id, transport_info in rtsp_data.tracks.items():
         try:
             with RTSPTransportDecoder(transport_info, output_path) as transport_decoder:
-                transport_decoder.decode_stream(rtp_capture, rtsp_data.sdp, track_id)
+                transport_decoder.decode_stream(input_path, rtsp_data.sdp, track_id)
         except KeyError as e:
             logger.error(f"{e}, skipping")
 
