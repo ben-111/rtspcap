@@ -3,7 +3,7 @@ import logging
 from pyshark import FileCapture
 
 from rtsp_decoder.rtsp import RTSPDataExtractor
-from rtsp_decoder.rtp import RTPDecoder
+from rtsp_decoder.transport.transport_decoder import RTSPTransportDecoder
 
 from typing import Dict, Optional
 
@@ -21,12 +21,12 @@ def main(input_path: str, output_path: Optional[str]) -> None:
         f"Found RTSP stream `{rtsp_data.stream_name}`, saving to `{output_path}`"
     )
 
-    with RTPDecoder(output_path) as rtp_decoder:
-        for track_id, track in rtsp_data.tracks.items():
-            with FileCapture(
-                input_path, display_filter=f"rtp and {track.get_display_filter()}"
-            ) as rtp_capture:
-                rtp_decoder.decode_stream(rtp_capture, rtsp_data.sdp, track_id)
+    for track_id, transport_info in rtsp_data.tracks.items():
+        try:
+            with RTSPTransportDecoder(transport_info, output_path) as transport_decoder:
+                transport_decoder.decode_stream(rtp_capture, rtsp_data.sdp, track_id)
+        except KeyError as e:
+            logger.error(f"{e}, skipping")
 
 
 if __name__ == "__main__":

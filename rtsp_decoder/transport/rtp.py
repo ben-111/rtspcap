@@ -7,6 +7,8 @@ from av.packet import Packet as AVPacket
 from pyshark import FileCapture
 from pyshark.packet.packet import Packet
 
+from rtsp_decoder.transport.transport_base import TransportBase
+from rtsp_decoder.rtsp import TransportInformation
 from rtsp_decoder.sdp import get_stream_codec
 
 from rtsp_decoder.codecs.stream_codec import StreamCodec
@@ -16,15 +18,31 @@ from typing import Dict, List, Optional
 import logging
 
 
-class RTPDecoder:
+class RTPDecoder(TransportBase):
     MAX_OUT_OF_ORDER_PACKETS = 50
 
-    def __init__(self, output_path: str):
+    def __init__(self, transport_info: TransportInformation, output_path: str):
+        self._display_filter = self._build_display_filter(transport_info)
         self.container = av.open(output_path, "w")
         self.logger = logging.getLogger(__name__)
 
-    def decode_stream(self, rtp_capture: FileCapture, sdp: dict, track_id: str):
+    def _build_display_filter(self, transport_info: TransportInformation) -> str:
+        transport_header = transport_info.transport_header
+        server_ip = transport_info.server_ip
+        client_ip = transport_info.client_ip
+        client_port, _ = transport_header.options["client_port"].split("-", 1)
+        server_port, _ = transport_header.options["server_port"].split("-", 1)
+
+        display_filter = "rtp and "
+        display_filter += f"ip.src == {server_ip} and "
+        display_filter += f"ip.dst == {client_ip} and "
+        display_filter += f"udp.srcport == {server_port} and "
+        display_filter += f"udp.dstport == {client_port}"
+        return display_filter
+
+    def decode_stream(self, pcap_path: str, sdp: dict, track_id: str):
         """Assume rtp_capture is filtered so that all RTP packets we see are from the same stream"""
+        rtp_capture = FileCapture(pcap_path, display_filter=self._display_filter)
         stream_codec = get_stream_codec(sdp, track_id)
         if stream_codec is None:
             self.logger.warning(f"Skipping unsupported codec")
@@ -110,9 +128,3 @@ class RTPDecoder:
 
     def close(self):
         self.container.close()
-
-    def __enter__(self) -> "RTPDecoder":
-        return self
-
-    def __exit__(self, exception_type, exception_value, exception_trace):
-        self.close()

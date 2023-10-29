@@ -25,6 +25,12 @@ class RTSPTransportHeader(NamedTuple):
         return cls(protocol=protocol, options=options)
 
 
+class TransportInformation(NamedTuple):
+    transport_header: RTSPTransportHeader
+    server_ip: str
+    client_ip: str
+
+
 class RTSPTrack(NamedTuple):
     server_ip: str
     server_port: int
@@ -46,7 +52,7 @@ class RTSPDataExtractor:
         self.logger = logging.getLogger(__name__)
         self.stream_name = None
         self.sdp = None
-        self.tracks: Dict[str, RTSPTrack] = dict()
+        self.tracks: Dict[str, TransportInformation] = dict()
 
         # Currently only taking the first stream we find
         with FileCapture(pcap_path, display_filter=f"rtsp") as cap:
@@ -65,14 +71,14 @@ class RTSPDataExtractor:
         # We disable sdp so we can access the SDP data directly
         with FileCapture(
             pcap_path,
-            display_filter=f"rtsp and tcp.stream == {tcp_stream}",
+            display_filter=f"tcp.stream == {tcp_stream} and (rtsp.request or rtsp.response)",
             disable_protocol="sdp",
         ) as cap:
             self.stream_name, self.sdp, self.tracks = self._extract_rtsp_data(cap)
 
     def _extract_rtsp_data(
         self, capture: FileCapture
-    ) -> Tuple[str, dict, Dict[str, RTSPTrack]]:
+    ) -> Tuple[str, dict, Dict[str, TransportInformation]]:
         stream_name = None
         sdp = None
         tracks: Dict[str, RTSPTrack] = dict()
@@ -82,8 +88,8 @@ class RTSPDataExtractor:
             self.logger.debug(f"Found SDP, stream url is {stream_url}")
 
             while True:
-                track_id, track = self._get_track(capture)
-                tracks[track_id] = track
+                track_id, transport_info = self._get_track(capture)
+                tracks[track_id] = transport_info
                 self.logger.debug(f"Found track with ID: {track_id}")
 
         except StopIteration:
@@ -109,7 +115,7 @@ class RTSPDataExtractor:
         sdp = sdp_transform.parse(bytes.fromhex(response.rtsp.data.raw_value).decode())
         return stream_url, sdp
 
-    def _get_track(self, capture: FileCapture) -> Dict[str, RTSPTrack]:
+    def _get_track(self, capture: FileCapture) -> Dict[str, TransportInformation]:
         while True:
             request = capture.next()
             if (
@@ -122,19 +128,13 @@ class RTSPDataExtractor:
                     break
 
         track_id = request["RTSP"].url
-        transport = RTSPTransportHeader.parse(response["RTSP"].transport)
-        assert (
-            transport.protocol == "RTP/AVP"
-        ), f"Only RTP/AVP is supported, Got {transport.protocol}"
-        server_ip = str(response.ip.src)
-        client_port, _ = transport.options["client_port"].split("-", 1)
-        server_port, _ = transport.options["server_port"].split("-", 1)
-        assert "source" not in transport.options, "Different source is not supported"
+        transport_header = RTSPTransportHeader.parse(response["RTSP"].transport)
 
-        track = RTSPTrack(
-            server_ip=server_ip,
-            server_port=int(server_port),
-            client_port=int(client_port),
+        assert "IP" in response
+        transport_info = TransportInformation(
+            transport_header=transport_header,
+            server_ip=response["IP"].src,
+            client_ip=response["IP"].dst,
         )
 
-        return track_id, track
+        return track_id, transport_info
