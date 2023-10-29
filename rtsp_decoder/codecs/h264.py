@@ -8,7 +8,7 @@ from av.packet import Packet as AVPacket
 
 from pyshark.packet.packet import Packet
 
-from typing import List
+from typing import List, Optional, Tuple, Any
 
 
 logger = logging.getLogger(__name__)
@@ -18,9 +18,11 @@ _H264_INPUT_BUFFER_PADDING_SIZE = 64
 
 
 class CodecH264(CodecBase):
+    AV_CODEC_NAME = "h264"
+
     # Taken from ffmpeg: `rtpdec_h264.c:ff_h264_parse_sprop_parameter_sets`
-    @staticmethod
-    def get_codec_context(sdp_media: dict) -> CodecContext:
+    @classmethod
+    def get_codec_context(cls, sdp_media: dict) -> Tuple[CodecContext, Any]:
         fmtp = CodecBase._parse_fmtp(sdp_media)
         assert (
             "sprop-parameter-sets" in fmtp
@@ -31,16 +33,22 @@ class CodecH264(CodecBase):
             extradata += b64decode(sprop_parameter_set)
             extradata += b"\x00" * _H264_INPUT_BUFFER_PADDING_SIZE
 
-        codec_ctx = CodecContext.create("h264", "r")
+        codec_ctx = CodecContext.create(cls.AV_CODEC_NAME, "r")
         codec_ctx.extradata = extradata
-        return codec_ctx
+        return codec_ctx, None
 
     # Taken from ffmpeg: `rtpdec_h264.c:h264_handle_packet`
-    @staticmethod
+    @classmethod
     def handle_packet(
+        cls,
         codec_ctx: CodecContext,
-        packet: Packet,
+        packet: Optional[Packet],
+        _: Any,
     ) -> List[AVPacket]:
+        out_packets = []
+        if packet is None:
+            return out_packets
+
         buf = bytes.fromhex(packet["RTP"].payload.raw_value)
         if len(buf) == 0:
             logger.error(f"RTP h264 invalid data")
@@ -53,22 +61,21 @@ class CodecH264(CodecBase):
             nal_type = 1
 
         logger.debug(f"Parsing H264 RTP packet with NAL type {nal_type}")
-        out_packets = []
         if nal_type == 0 or nal_type == 1:
             out_packets = codec_ctx.parse(H264_STARTING_SEQUENCE + buf)
         elif nal_type == 24:
             # One packet, multiple NALs
-            out_packets = CodecH264._handle_aggregated_packet(codec_ctx, buf[1:])
+            out_packets = cls._handle_aggregated_packet(codec_ctx, buf[1:])
         elif nal_type == 28:
             # Fragmented NAL
-            out_packets = CodecH264._handle_fu_a_packet(codec_ctx, buf)
+            out_packets = cls._handle_fu_a_packet(codec_ctx, buf)
         else:
             logger.error(f"Got H264 RTP packet with unsupported NAL type: {nal_type}")
 
         return out_packets
 
-    @staticmethod
-    def _handle_fu_a_packet(codec_ctx: CodecContext, buf: bytes) -> List[AVPacket]:
+    @classmethod
+    def _handle_fu_a_packet(cls, codec_ctx: CodecContext, buf: bytes) -> List[AVPacket]:
         if len(buf) < 3:
             logger.error("Too short data for FU-A H.264 RTP packet")
             return []
@@ -88,9 +95,9 @@ class CodecH264(CodecBase):
 
         return codec_ctx.parse(buffer_to_parse)
 
-    @staticmethod
+    @classmethod
     def _handle_aggregated_packet(
-        codec_ctx: CodecContext, buf: bytes
+        cls, codec_ctx: CodecContext, buf: bytes
     ) -> List[AVPacket]:
         """
         An aggregated packet is an array of NAL units.

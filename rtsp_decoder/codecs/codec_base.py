@@ -4,22 +4,32 @@ from av.packet import Packet as AVPacket
 
 from pyshark.packet.packet import Packet
 
-from typing import Dict, List
+from typing import Dict, List, Optional, Tuple, Any
 
 
 class CodecBase(ABC):
-    @staticmethod
+    @property
     @abstractmethod
-    def get_codec_context(sdp_media: dict) -> CodecContext:
+    def AV_CODEC_NAME(self) -> str:
         ...
 
-    @staticmethod
+    @classmethod
+    @abstractmethod
+    def get_codec_context(cls, sdp_media: dict) -> Tuple[CodecContext, Any]:
+        ...
+
+    @classmethod
     def handle_packet(
+        cls,
         codec_ctx: CodecContext,
-        packet: Packet,
+        packet: Optional[Packet],
+        payload_ctx: Any,
     ) -> List[AVPacket]:
-        chunk = bytes.fromhex(packet["RTP"].payload.raw_value)
-        return codec_ctx.parse(chunk)
+        out_packets = []
+        if packet is not None:
+            chunk = bytes.fromhex(packet["RTP"].payload.raw_value)
+            out_packets = codec_ctx.parse(chunk)
+        return out_packets
 
     @staticmethod
     def _parse_fmtp(sdp_media: dict) -> Dict[str, str]:
@@ -31,5 +41,5 @@ class CodecBase(ABC):
                 parameters = config.split("; ")
                 for parameter in parameters:
                     key, value = parameter.split("=", 1)
-                    fmtp_config[key] = value
+                    fmtp_config[key.casefold()] = value
         return fmtp_config
