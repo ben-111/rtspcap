@@ -384,11 +384,3 @@ class RTPCodecMPEG4_GENERIC(RTPCodecBase):
             au_headers.append(au_header)
 
         return au_headers, au_headers_section_size
-
-    @staticmethod
-    def _create_av_packet(data: bytes, time_base: Fraction, timestamp: int) -> AVPacket:
-        out_packet = AVPacket(data)
-        out_packet.time_base = time_base
-        out_packet.pts = timestamp
-        out_packet.dts = timestamp
-        return out_packet
