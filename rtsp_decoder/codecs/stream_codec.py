@@ -7,7 +7,7 @@ from pyshark.packet.packet import Packet
 from rtsp_decoder.codecs.transport_codec_base import TransportCodecBase
 from rtsp_decoder.codecs.rtp_codec import RTPCodec
 
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 
 
 class StreamCodec:
@@ -17,14 +17,20 @@ class StreamCodec:
         "rtp/avp/tcp": RTPCodec,
     }
 
-    def __init__(self, transport_protocol: str, codec_name: str, sdp_media: dict):
+    def __init__(
+        self,
+        transport_protocol: str,
+        codec_name: str,
+        sdp_media: dict,
+        transport_specific_data: Any,
+    ):
         transport_proto = transport_protocol.casefold()
         if transport_proto not in self._TRANSPORT_CODEC_MAP:
             raise ValueError(f"Codecs for transport {transport_proto} not implemented")
 
         self.transport_proto = transport_proto
         self._transport_codec = self._TRANSPORT_CODEC_MAP[self.transport_proto](
-            codec_name, sdp_media
+            codec_name, sdp_media, transport_specific_data
         )
         self.codec_name = self._transport_codec.codec_name
         self.codec_type = self._transport_codec.codec_type

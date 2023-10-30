@@ -1,11 +1,24 @@
 import argparse
 import logging
+from contextlib import contextmanager
+
+import av
+from av.container import Container
 from pyshark import FileCapture
 
 from rtsp_decoder.rtsp import RTSPDataExtractor
 from rtsp_decoder.transport.transport_decoder import RTSPTransportDecoder
 
 from typing import Dict, Optional
+
+
+@contextmanager
+def GetContainer(output_path: str) -> Container:
+    c = av.open(output_path, format="mp4", mode="w")
+    try:
+        yield c
+    finally:
+        c.close()
 
 
 def main(input_path: str, output_path: Optional[str]) -> None:
@@ -21,12 +34,15 @@ def main(input_path: str, output_path: Optional[str]) -> None:
         f"Found RTSP stream `{rtsp_data.stream_name}`, saving to `{output_path}`"
     )
 
-    for track_id, transport_info in rtsp_data.tracks.items():
-        try:
-            with RTSPTransportDecoder(transport_info, output_path) as transport_decoder:
-                transport_decoder.decode_stream(input_path, rtsp_data.sdp, track_id)
-        except KeyError as e:
-            logger.error(f"{e}, skipping")
+    with GetContainer(output_path) as container:
+        for track_id, transport_info in rtsp_data.tracks.items():
+            try:
+                transport_decoder = RTSPTransportDecoder(transport_info)
+                transport_decoder.decode_stream(
+                    container, input_path, rtsp_data.sdp, track_id
+                )
+            except KeyError as e:
+                logger.error(f"{e}, skipping")
 
 
 if __name__ == "__main__":

@@ -4,6 +4,8 @@ from av.packet import Packet as AVPacket
 
 from pyshark.packet.packet import Packet
 
+from rtsp_decoder.rtsp import RTPInfo
+
 from typing import Dict, List, Optional, Tuple, Any
 
 
@@ -15,7 +17,9 @@ class RTPCodecBase(ABC):
 
     @classmethod
     @abstractmethod
-    def get_codec_context(cls, sdp_media: dict) -> Tuple[CodecContext, Any]:
+    def get_codec_context(
+        cls, sdp_media: dict, rtp_info: Optional[RTPInfo]
+    ) -> Tuple[CodecContext, Any]:
         ...
 
     @classmethod

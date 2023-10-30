@@ -8,8 +8,8 @@ from typing import Iterator
 
 
 class RTPOverTCPDecoder(TransportBase):
-    def __init__(self, transport_info: TransportInformation, output_path: str):
-        super().__init__(transport_info, output_path)
+    def __init__(self, transport_info: TransportInformation):
+        super().__init__(transport_info)
         self._display_filter = self._build_display_filter(transport_info)
 
     def _build_display_filter(self, transport_info: TransportInformation) -> str:

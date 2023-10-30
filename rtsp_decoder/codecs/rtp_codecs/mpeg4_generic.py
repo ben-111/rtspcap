@@ -1,5 +1,6 @@
 import logging
 from enum import Enum
+from fractions import Fraction
 from dataclasses import dataclass, field
 
 from av.codec import CodecContext
@@ -7,6 +8,7 @@ from av.packet import Packet as AVPacket
 
 from pyshark.packet.packet import Packet
 
+from rtsp_decoder.rtsp import RTPInfo
 from rtsp_decoder.codecs.rtp_codecs.rtp_codec_base import RTPCodecBase
 
 from typing import NamedTuple, List, Dict, Tuple, Any, Optional
@@ -49,7 +51,11 @@ MAX_RTP_PACKET_LENGTH = 8192
 
 @dataclass
 class AACContext:
+    first_seq: Optional[int] = None
+    rtptime: Optional[int] = None
     attributes: Dict[str, AACAttribute] = field(default_factory=dict)
+    time_base: Fraction = field(default_factory=Fraction)
+    au_duration: Optional[int] = None
     buf: bytes = b""
     expected_buf_size: int = 0
     timestamp: int = 0
@@ -111,7 +117,15 @@ class RTPCodecMPEG4_GENERIC(RTPCodecBase):
 
     # Taken from ffmpeg: `rtpdec_mpeg4.c:parse_sdp_line`
     @classmethod
-    def get_codec_context(cls, sdp_media: dict) -> Tuple[CodecContext, Any]:
+    def get_codec_context(
+        cls, sdp_media: dict, rtp_info: Optional[RTPInfo]
+    ) -> Tuple[CodecContext, Any]:
+        aac_ctx = AACContext()
+
+        if rtp_info is not None:
+            aac_ctx.first_seq = rtp_info.seq
+            aac_ctx.rtptime = rtp_info.rtptime
+
         fmtp = RTPCodecBase._parse_fmtp(sdp_media)
 
         codec_ctx = CodecContext.create(cls.AV_CODEC_NAME, "r")
@@ -121,10 +135,11 @@ class RTPCodecMPEG4_GENERIC(RTPCodecBase):
             logger.error("Expected config attribute in fmtp")
 
         rtp_data = sdp_media["rtp"][0]
-        codec_ctx.rate = rtp_data["rate"]
         codec_ctx.layout = int(rtp_data["encoding"]) if "encoding" in rtp_data else 1
 
-        aac_ctx = AACContext()
+        clock_rate_in_hz = rtp_data["rate"]
+        aac_ctx.time_base = Fraction(1, clock_rate_in_hz)
+
         for attr_name, attr_options in cls._FMTP_ATTRIBUTES.items():
             if attr_name in fmtp:
                 logger.debug(f"Found attribute {attr_name}")
@@ -206,14 +221,35 @@ class RTPCodecMPEG4_GENERIC(RTPCodecBase):
             logger.error(f"Error parsing AU headers: {str(e)}")
             return out_packets
 
+        current_au_timestamp = int(packet["RTP"].timestamp)
+        current_seq = int(packet["RTP"].seq)
+        if (
+            aac_ctx.rtptime is None
+            or aac_ctx.first_seq is None
+            or (aac_ctx.au_duration is None and current_seq != aac_ctx.first_seq)
+        ):
+            logger.warning("Losing a packet to determine AU duration")
+            aac_ctx.first_seq = current_seq + 1
+            aac_ctx.rtptime = current_au_timestamp
+            return out_packets
+        elif aac_ctx.au_duration is None:
+            diff = current_au_timestamp - aac_ctx.rtptime
+            aac_ctx.au_duration = diff // len(au_headers)
+
+        current_au_timestamp -= aac_ctx.rtptime
         buf = buf[au_headers_section_size:]
         if len(au_headers) == 1 and len(buf) < au_headers[0].size:
             # Packet is fragmented
             logger.debug(f"Fragmented AU")
-            return cls._handle_fragmented_packet(aac_ctx, au_headers, packet, buf)
+            return cls._handle_fragmented_packet(
+                aac_ctx, au_headers, packet, buf, current_au_timestamp
+            )
 
         # Assuming no auxiliiary section
         logger.debug(f"Data section size: {len(buf)}")
+        if not au_headers:
+            return out_packets
+
         for au_header in au_headers:
             if len(buf) < au_header.size:
                 logger.error("AU larger than packet size")
@@ -221,13 +257,23 @@ class RTPCodecMPEG4_GENERIC(RTPCodecBase):
 
             data = buf[: au_header.size]
             buf = buf[au_header.size :]
-            out_packets.append(AVPacket(data))
+            out_packet = cls._create_av_packet(
+                data, aac_ctx.time_base, current_au_timestamp
+            )
+            logger.debug(f"PTS = {current_au_timestamp}")
+            current_au_timestamp += aac_ctx.au_duration
+            out_packets.append(out_packet)
 
         return out_packets
 
     @classmethod
     def _handle_fragmented_packet(
-        cls, aac_ctx: AACContext, au_headers: List[AUHeader], packet: Packet, buf: bytes
+        cls,
+        aac_ctx: AACContext,
+        au_headers: List[AUHeader],
+        packet: Packet,
+        buf: bytes,
+        current_au_timestamp: int,
     ) -> List[AVPacket]:
         out_packets = []
         if len(aac_ctx.buf) == 0:
@@ -261,8 +307,11 @@ class RTPCodecMPEG4_GENERIC(RTPCodecBase):
             logger.error("Missed some packets, discarding frame")
             return out_packets
 
-        out_packets.append(AVPacket(aac_ctx.buf))
+        out_packet = cls._create_av_packet(
+            aac_ctx.buf, aac_ctx.time_base, current_au_timestamp
+        )
         aac_ctx.buf = b""
+        out_packets.append(out_packet)
         return out_packets
 
     @classmethod
@@ -335,3 +384,11 @@ class RTPCodecMPEG4_GENERIC(RTPCodecBase):
             au_headers.append(au_header)
 
         return au_headers, au_headers_section_size
+
+    @staticmethod
+    def _create_av_packet(data: bytes, time_base: Fraction, timestamp: int) -> AVPacket:
+        out_packet = AVPacket(data)
+        out_packet.time_base = time_base
+        out_packet.pts = timestamp
+        out_packet.dts = timestamp
+        return out_packet
