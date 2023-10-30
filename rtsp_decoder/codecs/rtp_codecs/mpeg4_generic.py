@@ -9,7 +9,7 @@ from pyshark.packet.packet import Packet
 
 from rtsp_decoder.codecs.rtp_codecs.rtp_codec_base import RTPCodecBase
 
-from typing import NamedTuple, List, Dict, Tuple, Any
+from typing import NamedTuple, List, Dict, Tuple, Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +34,8 @@ class AACAttribute(NamedTuple):
 class AUHeader(NamedTuple):
     size: int = 0
     index: int = 0
+
+    # Maybe will use one day
     cts_flag: int = 0
     cts: int = 0
     dts_flag: int = 0
@@ -47,13 +49,9 @@ MAX_RTP_PACKET_LENGTH = 8192
 
 @dataclass
 class AACContext:
-    MAX_BUF_SIZE: int = MAX_RTP_PACKET_LENGTH
     attributes: Dict[str, AACAttribute] = field(default_factory=dict)
-    cur_au_index: int = 0
-    au_headers: List[AUHeader] = field(default_factory=list)
-    au_headers_length_bytes: int = 0
     buf: bytes = b""
-    buf_pos: int = 0
+    expected_buf_size: int = 0
     timestamp: int = 0
 
 
@@ -122,7 +120,9 @@ class RTPCodecMPEG4_GENERIC(RTPCodecBase):
         else:
             logger.error("Expected config attribute in fmtp")
 
-        codec_ctx.rate = sdp_media["rtp"][0]["rate"]
+        rtp_data = sdp_media["rtp"][0]
+        codec_ctx.rate = rtp_data["rate"]
+        codec_ctx.layout = int(rtp_data["encoding"]) if "encoding" in rtp_data else 1
 
         aac_ctx = AACContext()
         for attr_name, attr_options in cls._FMTP_ATTRIBUTES.items():
@@ -162,7 +162,7 @@ class RTPCodecMPEG4_GENERIC(RTPCodecBase):
     def handle_packet(
         cls,
         codec_ctx: CodecContext,
-        packet: Packet,
+        packet: Optional[Packet],
         aac_ctx: AACContext,
     ) -> List[AVPacket]:
         """
@@ -195,7 +195,7 @@ class RTPCodecMPEG4_GENERIC(RTPCodecBase):
             return out_packets
 
         if packet is None:
-            return cls._handle_last_packet(codec_ctx, aac_ctx)
+            return out_packets
 
         buf = bytes.fromhex(packet["RTP"].payload.raw_value)
         try:
@@ -210,7 +210,7 @@ class RTPCodecMPEG4_GENERIC(RTPCodecBase):
         if len(au_headers) == 1 and len(buf) < au_headers[0].size:
             # Packet is fragmented
             logger.debug(f"Fragmented AU")
-            return cls._handle_fragmented_packet(aac_ctx, packet, buf)
+            return cls._handle_fragmented_packet(aac_ctx, au_headers, packet, buf)
 
         # Assuming no auxiliiary section
         logger.debug(f"Data section size: {len(buf)}")
@@ -221,79 +221,48 @@ class RTPCodecMPEG4_GENERIC(RTPCodecBase):
 
             data = buf[: au_header.size]
             buf = buf[au_header.size :]
-            out_packets += codec_ctx.parse(data)
-
-        # buf = buf[aac_ctx.au_headers[0].size :]
-        # if len(buf) > 0 and len(aac_ctx.au_headers) > 1:
-        #     buf_size = min(len(buf), AACContext.MAX_BUF_SIZE)
-        #     aac_ctx.buf = buf[:buf_size]
-        #     aac_ctx.cur_au_index = 1
-        #     aac_ctx.buf_pos = 0
-
-        return out_packets
-
-    @classmethod
-    def _handle_last_packet(
-        cls, codec_ctx: CodecContext, aac_ctx: AACContext
-    ) -> List[AVPacket]:
-        out_packets = []
-        if aac_ctx.cur_au_index > len(aac_ctx.au_headers):
-            logger.error("Invalid parser state")
-            return out_packets
-
-        remaining_len = len(aac_ctx.buf) - aac_ctx.buf_pos
-        current_au_header = aac_ctx.au_headers[aac_ctx.cur_au_index]
-        if remaining_len < current_au_header.size:
-            logger.error("Invalid AU size")
-            return out_packets
-
-        out_packets = codec_ctx.parse(
-            aac_ctx.buf[aac_ctx.buf_pos : aac_ctx.buf_pos + current_au_header.size]
-        )
-        aac_ctx.buf_pos += current_au_header.size
-        aac_ctx.cur_au_index += 1
-
-        if aac_ctx.cur_au_index == len(aac_ctx.au_headers):
-            logger.debug("Done parsing AU headers")
-            aac_ctx.buf_pos = 0
+            out_packets.append(AVPacket(data))
 
         return out_packets
 
     @classmethod
     def _handle_fragmented_packet(
-        cls, aac_ctx: AACContext, packet: Packet, buf: bytes
+        cls, aac_ctx: AACContext, au_headers: List[AUHeader], packet: Packet, buf: bytes
     ) -> List[AVPacket]:
-        if aac_ctx.buf_pos == 0:
-            if aac_ctx.au_headers[0].size > cls.MAX_AAC_HBR_FRAME_SIZE:
+        out_packets = []
+        if len(aac_ctx.buf) == 0:
+            # First fragment
+            if au_headers[0].size > cls.MAX_AAC_HBR_FRAME_SIZE:
                 logger.error("Invalid AU size")
                 return out_packets
 
-            aac_ctx.buf = bytes(aac_ctx.au_headers[0].size)
+            aac_ctx.expected_buf_size = au_headers[0].size
             aac_ctx.timestamp = int(packet["RTP"].timestamp)
 
         if (
             aac_ctx.timestamp != int(packet["RTP"].timestamp)
-            or aac_ctx.au_headers[0].size != len(aac_ctx.buf)
-            or aac_ctx.buf_pos + len(buf) > cls.MAX_AAC_HBR_FRAME_SIZE
+            or au_headers[0].size != aac_ctx.expected_buf_size
+            or len(aac_ctx.buf) + len(buf) > cls.MAX_AAC_HBR_FRAME_SIZE
         ):
-            aac_ctx.buf_pos = 0
+            aac_ctx.expected_buf_size = 0
             aac_ctx.buf = bytes()
             logger.error("Invalid packet received")
             return out_packets
 
-        aac_ctx.buf = aac_ctx.buf[: aac_ctx.buf_pos] + buf
-        aac_ctx.buf_pos += len(buf)
+        aac_ctx.buf += buf
 
         if not int(packet["RTP"].marker):
+            # There are more fragments
             return out_packets
 
-        if aac_ctx.buf_pos != len(aac_ctx.buf):
-            aac_ctx.buf_pos = 0
+        # Last fragment
+        if len(aac_ctx.buf) != aac_ctx.expected_buf_size:
+            aac_ctx.buf = b""
             logger.error("Missed some packets, discarding frame")
             return out_packets
 
-        aac_ctx.buf_pos = 0
-        out_packets = codec_ctx.parse(aac_ctx.buf)
+        out_packets.append(AVPacket(aac_ctx.buf))
+        aac_ctx.buf = b""
         return out_packets
 
     @classmethod
