@@ -18,7 +18,7 @@ class RTPCodec(TransportCodecBase):
     _CODEC_MAP: Dict[str, RTPCodecBase] = {
         "h264": RTPCodecH264,
         "mp4v-es": RTPCodecMP4V_ES,
-        # "mpeg4-generic": RTPCodecMPEG4_GENERIC,
+        "mpeg4-generic": RTPCodecMPEG4_GENERIC,
     }
 
     def __init__(self, codec_name: str, sdp_media: dict, transport_specific_data: Any):

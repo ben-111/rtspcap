@@ -58,5 +58,5 @@ class RTPCodecBase(ABC):
         out_packet = AVPacket(data)
         out_packet.time_base = time_base
         out_packet.pts = timestamp
-        out_packet.dts = timestamp
+        # out_packet.dts = timestamp
         return out_packet

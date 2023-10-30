@@ -63,9 +63,11 @@ class TransportBase(ABC):
             frames = stream_codec.decode(out_packet)
             self.logger.debug(f"Decoded {len(frames)} frames")
             for frame in frames:
+                # breakpoint()
                 encoded_packet = out_stream.encode(frame)
                 container.mux(encoded_packet)
 
     def _flush_encoder(self, container: Container, out_stream: Stream) -> None:
+        self.logger.debug("Flushing encoder")
         out_packet = out_stream.encode(None)
         container.mux(out_packet)
