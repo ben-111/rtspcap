@@ -1,5 +1,4 @@
 from base64 import b64decode
-from dataclasses import dataclass
 import logging
 
 from av.codec import CodecContext
@@ -19,12 +18,6 @@ H264_STARTING_SEQUENCE = b"\x00\x00\x00\x01"
 _H264_INPUT_BUFFER_PADDING_SIZE = 64
 
 
-@dataclass
-class H264Context:
-    fragments_buf: bytes = b""
-    last_fragment_seq: int = -1
-
-
 class RTPCodecH264(RTPCodecBase):
     AV_CODEC_NAME = "h264"
 
@@ -33,7 +26,7 @@ class RTPCodecH264(RTPCodecBase):
     def get_codec_context(
         cls, sdp_media: dict, rtp_info: Optional[RTPInfo]
     ) -> Tuple[CodecContext, Any]:
-        fmtp = cls._parse_fmtp(sdp_media)
+        fmtp = RTPCodecBase._parse_fmtp(sdp_media)
         assert (
             "sprop-parameter-sets" in fmtp
         ), "Expected sprop-parameter-sets in fmtp of h264"
@@ -45,8 +38,7 @@ class RTPCodecH264(RTPCodecBase):
 
         codec_ctx = CodecContext.create(cls.AV_CODEC_NAME, "r")
         codec_ctx.extradata = extradata
-        codec_ctx.rate = sdp_media["rtp"][0]["rate"]
-        return codec_ctx, H264Context()
+        return codec_ctx, None
 
     # Taken from ffmpeg: `rtpdec_h264.c:h264_handle_packet`
     @classmethod
@@ -54,11 +46,10 @@ class RTPCodecH264(RTPCodecBase):
         cls,
         codec_ctx: CodecContext,
         packet: Optional[Packet],
-        h264_ctx: H264Context,
+        _: Any,
     ) -> List[AVPacket]:
         out_packets = []
         if packet is None:
-            out_packets.append(cls._create_av_packet())
             return out_packets
 
         buf = bytes.fromhex(packet["RTP"].payload.raw_value)
@@ -73,47 +64,24 @@ class RTPCodecH264(RTPCodecBase):
             nal_type = 1
 
         logger.debug(f"Parsing H264 RTP packet with NAL type {nal_type}")
-
-        current_seq = int(packet["RTP"].seq)
-        if (
-            nal_type != 28
-            and current_seq > 0
-            and current_seq == (h264_ctx.last_fragment_seq + 1)
-        ):
-            out_packet = cls._create_av_packet(h264_ctx.fragments_buf)
-            h264_ctx.fragments_buf = b""
-            h264_ctx.last_fragment_seq = -1
-            out_packets.append(out_packet)
-
         if nal_type == 0 or nal_type == 1:
-            out_packet = cls._create_av_packet(H264_STARTING_SEQUENCE + buf)
-            out_packets.append(out_packet)
+            out_packets = codec_ctx.parse(H264_STARTING_SEQUENCE + buf)
         elif nal_type == 24:
             # One packet, multiple NALs
-            out_packets += cls._handle_aggregated_packet(buf[1:])
+            out_packets = cls._handle_aggregated_packet(codec_ctx, buf[1:])
         elif nal_type == 28:
             # Fragmented NAL
-            out_packets += cls._handle_fu_a_packet(h264_ctx, buf, current_seq)
+            out_packets = cls._handle_fu_a_packet(codec_ctx, buf)
         else:
             logger.error(f"Got H264 RTP packet with unsupported NAL type: {nal_type}")
 
         return out_packets
 
     @classmethod
-    def _handle_fu_a_packet(
-        cls, h264_ctx: H264Context, buf: bytes, seq: int
-    ) -> List[AVPacket]:
-        out_packets = []
+    def _handle_fu_a_packet(cls, codec_ctx: CodecContext, buf: bytes) -> List[AVPacket]:
         if len(buf) < 3:
             logger.error("Too short data for FU-A H.264 RTP packet")
-            h264_ctx.fragments_buf = b""
-            return out_packets
-
-        if h264_ctx.last_fragment_seq >= 0 and seq != (h264_ctx.last_fragment_seq + 1):
-            h264_ctx.last_fragment_seq = -1
-            logger.error("Lost a fragment")
-            h264_ctx.fragments_buf = b""
-            return out_packets
+            return []
 
         fu_indicator = buf[0]
         fu_header = buf[1]
@@ -124,28 +92,16 @@ class RTPCodecH264(RTPCodecBase):
         buf = buf[2:]
         buffer_to_parse = b""
         if start_bit:
-            logger.debug("Starting fragment")
-            if h264_ctx.fragments_buf:
-                out_packet = cls._create_av_packet(h264_ctx.fragments_buf)
-                h264_ctx.fragments_buf = b""
-                h264_ctx.last_fragment_seq = -1
-                out_packets.append(out_packet)
-
             buffer_to_parse += H264_STARTING_SEQUENCE
             buffer_to_parse += nal.to_bytes(1, byteorder="little")
-        elif h264_ctx.last_fragment_seq < 0:
-            logger.error("Lost a fragment")
-            h264_ctx.fragments_buf = b""
-            return out_packets
-
-        h264_ctx.last_fragment_seq = seq
         buffer_to_parse += buf
 
-        h264_ctx.fragments_buf += buffer_to_parse
-        return out_packets
+        return codec_ctx.parse(buffer_to_parse)
 
     @classmethod
-    def _handle_aggregated_packet(cls, buf: bytes) -> List[AVPacket]:
+    def _handle_aggregated_packet(
+        cls, codec_ctx: CodecContext, buf: bytes
+    ) -> List[AVPacket]:
         """
         An aggregated packet is an array of NAL units.
         A NAL unit is a `uint16 nal_size` followed by a buffer of that size
@@ -156,11 +112,7 @@ class RTPCodecH264(RTPCodecBase):
             nal_size = int.from_bytes(nal_size_bytes, byteorder="little")
             buf = buf[2:]
             if nal_size <= len(buf):
-                out_packet = cls._create_av_packet(
-                    H264_STARTING_SEQUENCE + buf[:nal_size]
-                )
-                out_packets.append(out_packet)
-
+                out_packets += codec_ctx.parse(H264_STARTING_SEQUENCE + buf[:nal_size])
                 buf = buf[nal_size:]
             else:
                 logger.error(f"nal size exceeds length: {nal_size} > {len(buf)}")

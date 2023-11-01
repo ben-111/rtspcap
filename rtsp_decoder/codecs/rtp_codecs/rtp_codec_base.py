@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-from fractions import Fraction
 from av.codec import CodecContext
 from av.packet import Packet as AVPacket
 
@@ -48,15 +47,3 @@ class RTPCodecBase(ABC):
                     key, value = parameter.split("=", 1)
                     fmtp_config[key.casefold()] = value
         return fmtp_config
-
-    @staticmethod
-    def _create_av_packet(
-        data: Optional[bytes] = None,
-        time_base: Optional[Fraction] = None,
-        timestamp: Optional[int] = None,
-    ) -> AVPacket:
-        out_packet = AVPacket(data)
-        out_packet.time_base = time_base
-        out_packet.pts = timestamp
-        out_packet.dts = timestamp
-        return out_packet
