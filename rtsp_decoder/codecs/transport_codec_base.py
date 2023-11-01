@@ -5,12 +5,12 @@ from av.frame import Frame
 
 from pyshark.packet.packet import Packet
 
-from typing import List, Optional, Any
+from typing import List, Optional
 
 
 class TransportCodecBase(ABC):
     @abstractmethod
-    def __init__(self, codec_name: str, sdp_media: dict, transport_specific_data: Any):
+    def __init__(self, codec_name: str, sdp_media: dict):
         ...
 
     @property

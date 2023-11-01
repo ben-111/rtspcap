@@ -10,8 +10,8 @@ from typing import Dict, Iterator
 class RTPDecoder(TransportBase):
     MAX_OUT_OF_ORDER_PACKETS = 50
 
-    def __init__(self, transport_info: TransportInformation):
-        super().__init__(transport_info)
+    def __init__(self, transport_info: TransportInformation, output_path: str):
+        super().__init__(transport_info, output_path)
         self._display_filter = self._build_display_filter(transport_info)
 
     def _build_display_filter(self, transport_info: TransportInformation) -> str:
