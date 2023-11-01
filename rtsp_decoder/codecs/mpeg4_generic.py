@@ -7,7 +7,7 @@ from av.packet import Packet as AVPacket
 
 from pyshark.packet.packet import Packet
 
-from rtsp_decoder.codecs.rtp_codecs.rtp_codec_base import RTPCodecBase
+from rtsp_decoder.codecs.codec_base import CodecBase
 
 from typing import NamedTuple, List, Dict, Tuple, Any, Optional
 
@@ -85,7 +85,7 @@ class GetBitContext:
         return result
 
 
-class RTPCodecMPEG4_GENERIC(RTPCodecBase):
+class CodecMPEG4_GENERIC(CodecBase):
     AV_CODEC_NAME = "aac"
     MAX_AAC_HBR_FRAME_SIZE = 8191
     _FMTP_ATTRIBUTES: Dict[str, AACAttribute] = {
@@ -112,7 +112,7 @@ class RTPCodecMPEG4_GENERIC(RTPCodecBase):
     # Taken from ffmpeg: `rtpdec_mpeg4.c:parse_sdp_line`
     @classmethod
     def get_codec_context(cls, sdp_media: dict) -> Tuple[CodecContext, Any]:
-        fmtp = RTPCodecBase._parse_fmtp(sdp_media)
+        fmtp = cls._parse_fmtp(sdp_media)
 
         codec_ctx = CodecContext.create(cls.AV_CODEC_NAME, "r")
         if "config" in fmtp:

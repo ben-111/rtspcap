@@ -1,41 +1,62 @@
+import logging
+
+from av.container import Container
+from av.stream import Stream
 from pyshark import FileCapture
 from pyshark.packet.packet import Packet
 
-from rtsp_decoder.transport.transport_base import TransportBase
-from rtsp_decoder.rtsp import TransportInformation
+from rtsp_decoder.rtsp import RTPStreamInfo
+from rtsp_decoder.sdp import get_codec_name_from_sdp_media
 
-from typing import Dict, Iterator
+from rtsp_decoder.codecs.rtp_codec import RTPCodec
+
+from typing import Dict, Iterator, Optional
 
 
-class RTPDecoder(TransportBase):
+class RTPDecoder:
     MAX_OUT_OF_ORDER_PACKETS = 50
 
-    def __init__(self, transport_info: TransportInformation, output_path: str):
-        super().__init__(transport_info, output_path)
-        self._display_filter = self._build_display_filter(transport_info)
+    def __init__(self, ssrc: int, stream_info: RTPStreamInfo):
+        self.logger = logging.getLogger(__name__)
+        self._display_filter = f"rtp.ssrc == {ssrc}"
+        self._sdp_media = stream_info.sdp_media
 
-    def _build_display_filter(self, transport_info: TransportInformation) -> str:
-        transport_header = transport_info.transport_header
-        server_ip = transport_info.server_ip
-        client_ip = transport_info.client_ip
-        client_port_value = transport_header.options["client_port"]
-        server_port_value = transport_header.options["server_port"]
+    def decode_stream(self, pcap_path: str, container: Container) -> None:
+        codec_name = get_codec_name_from_sdp_media(self._sdp_media)
+        stream_codec = RTPCodec(codec_name, self._sdp_media)
 
-        if "-" in client_port_value:
-            client_port = client_port_value.split("-", 1)[0]
+        self.logger.info(f"Decoding stream with codec: {stream_codec.codec_name}")
+        if stream_codec.codec_type == "video":
+            out_stream = container.add_stream("h264", rate=30)
+        elif stream_codec.codec_type == "audio":
+            out_stream = container.add_stream("aac")
         else:
-            client_port = client_port_value
-        if "-" in server_port_value:
-            server_port = server_port_value.split("-", 1)[0]
-        else:
-            server_port = server_port_value
+            raise ValueError(f"Unexpected codec type: {stream_codec.codec_type}")
 
-        display_filter = "rtp and "
-        display_filter += f"ip.src == {server_ip} and "
-        display_filter += f"ip.dst == {client_ip} and "
-        display_filter += f"udp.srcport == {server_port} and "
-        display_filter += f"udp.dstport == {client_port}"
-        return display_filter
+        for packet in self._iterate_packets(pcap_path):
+            self._handle_packet(container, out_stream, stream_codec, packet)
+
+        self._flush_encoder(container, out_stream)
+
+    def _handle_packet(
+        self,
+        container: Container,
+        out_stream: Stream,
+        stream_codec: RTPCodec,
+        packet: Optional[Packet],
+    ) -> None:
+        out_packets = stream_codec.handle_packet(packet)
+        self.logger.debug(f"Parsed {len(out_packets)} packets")
+        for out_packet in out_packets:
+            frames = stream_codec.decode(out_packet)
+            self.logger.debug(f"Decoded {len(frames)} frames")
+            for frame in frames:
+                encoded_packet = out_stream.encode(frame)
+                container.mux(encoded_packet)
+
+    def _flush_encoder(self, container: Container, out_stream: Stream) -> None:
+        out_packet = out_stream.encode(None)
+        container.mux(out_packet)
 
     def _iterate_packets(self, pcap_path: str) -> Iterator[Packet]:
         with FileCapture(pcap_path, display_filter=self._display_filter) as rtp_capture:

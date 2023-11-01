@@ -7,7 +7,7 @@ from pyshark.packet.packet import Packet
 from typing import Dict, List, Optional, Tuple, Any
 
 
-class RTPCodecBase(ABC):
+class CodecBase(ABC):
     @property
     @abstractmethod
     def AV_CODEC_NAME(self) -> str:

@@ -2,10 +2,14 @@ import os
 import sys
 import argparse
 import logging
+from contextlib import contextmanager
+
+import av
+from av.container import Container
 from pyshark import FileCapture
 
 from rtsp_decoder.rtsp import RTSPDataExtractor
-from rtsp_decoder.transport.transport_decoder import RTSPTransportDecoder
+from rtsp_decoder.rtp import RTPDecoder
 
 from typing import Dict, Optional
 
@@ -18,6 +22,15 @@ OUTPUT_DIR_OPT_HELP = "Output directory path. Default is the name of the capture
 SDP_OPT_HELP = (
     "Path to a backup SDP file to fallback on if none was found in the capture"
 )
+
+
+@contextmanager
+def GetContainer(output_path: str) -> Container:
+    c = av.open(output_path, format="mp4", mode="w")
+    try:
+        yield c
+    finally:
+        c.close()
 
 
 def main(
@@ -40,21 +53,33 @@ def main(
         output_dir = os.path.basename(input_path)
         output_dir, _ = os.path.splitext(output_dir)
 
+    if not os.path.exists(output_dir):
+        os.mkdir(output_dir)
+
+    if not os.path.isdir(output_dir):
+        logger.error("Invalid output dir path; Not a directory")
+        return 1
+
     rtsp_data = RTSPDataExtractor(input_path, sdp_path)
     if not rtsp_data.streams:
         logger.error("Could not extract data from capture; exiting")
         return 1
 
     logger.info(f"Found {len(rtsp_data.streams)} RTP streams")
-    breakpoint()
 
-    for track_id, transport_info in rtsp_data.tracks.items():
+    stream_num = 0
+    for ssrc, stream_info in rtsp_data.streams.items():
+        output_filename = f"{output_prefix}{stream_num}.mp4"
+        output_path = os.path.join(output_dir, output_filename)
+        logger.info(f"Processing stream {stream_num}, saving to `{output_path}`")
         try:
-            with RTSPTransportDecoder(transport_info, output_path) as transport_decoder:
-                transport_decoder.decode_stream(input_path, rtsp_data.sdp, track_id)
+            with GetContainer(output_path) as container:
+                rtp_decoder = RTPDecoder(ssrc, stream_info)
+                rtp_decoder.decode_stream(input_path, container)
         except Exception as e:
             logger.error(f"{e}, skipping")
 
+        stream_num += 1
     return 0
 
 
