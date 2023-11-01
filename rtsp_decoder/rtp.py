@@ -21,9 +21,11 @@ class RTPDecoder:
         self._display_filter = f"rtp.ssrc == {ssrc}"
         self._sdp_media = stream_info.sdp_media
 
-    def decode_stream(self, pcap_path: str, container: Container) -> None:
+    def decode_stream(
+        self, pcap_path: str, container: Container, fast: bool = False
+    ) -> None:
         codec_name = get_codec_name_from_sdp_media(self._sdp_media)
-        stream_codec = RTPCodec(codec_name, self._sdp_media)
+        stream_codec = RTPCodec(codec_name, self._sdp_media, fast)
 
         self.logger.info(f"Decoding stream with codec: {stream_codec.codec_name}")
         if stream_codec.codec_type == "video":
@@ -32,6 +34,9 @@ class RTPDecoder:
             out_stream = container.add_stream("aac")
         else:
             raise ValueError(f"Unexpected codec type: {stream_codec.codec_type}")
+
+        if fast:
+            out_stream.thread_type = "AUTO"
 
         for packet in self._iterate_packets(pcap_path):
             self._handle_packet(container, out_stream, stream_codec, packet)

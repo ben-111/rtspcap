@@ -22,6 +22,7 @@ OUTPUT_DIR_OPT_HELP = "Output directory path. Default is the name of the capture
 SDP_OPT_HELP = (
     "Path to a backup SDP file to fallback on if none was found in the capture"
 )
+FAST_OPT_HELP = "Use threading to boost the decoding speed"
 
 
 @contextmanager
@@ -38,6 +39,7 @@ def main(
     output_prefix: str,
     output_dir: Optional[str],
     sdp_path: Optional[str],
+    fast: bool,
     verbose: bool,
 ) -> int:
     logging_level = logging.INFO
@@ -75,7 +77,7 @@ def main(
         try:
             with GetContainer(output_path) as container:
                 rtp_decoder = RTPDecoder(ssrc, stream_info)
-                rtp_decoder.decode_stream(input_path, container)
+                rtp_decoder.decode_stream(input_path, container, fast)
         except Exception as e:
             logger.error(f"{e}, skipping")
 
@@ -89,7 +91,12 @@ if __name__ == "__main__":
     parser.add_argument("-p", "--prefix", help=PREFIX_OPT_HELP, default="stream")
     parser.add_argument("-o", "--output-dir", help=OUTPUT_DIR_OPT_HELP)
     parser.add_argument("--sdp", help=SDP_OPT_HELP)
+    parser.add_argument("--fast", action="store_true", help=FAST_OPT_HELP)
     parser.add_argument("-v", "--verbose", action="store_true", help="Add debug prints")
     args = parser.parse_args()
 
-    sys.exit(main(args.input, args.prefix, args.output_dir, args.sdp, args.verbose))
+    sys.exit(
+        main(
+            args.input, args.prefix, args.output_dir, args.sdp, args.fast, args.verbose
+        )
+    )

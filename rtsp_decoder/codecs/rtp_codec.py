@@ -20,7 +20,7 @@ class RTPCodec:
         "mpeg4-generic": CodecMPEG4_GENERIC,
     }
 
-    def __init__(self, codec_name: str, sdp_media: dict):
+    def __init__(self, codec_name: str, sdp_media: dict, fast: bool = False):
         self.logger = logging.getLogger(__name__)
         codec_name = codec_name.casefold()
         if codec_name not in self._CODEC_MAP:
@@ -32,6 +32,9 @@ class RTPCodec:
             sdp_media
         )
         self._codec_type = self._codec_ctx.type
+
+        if fast:
+            self._codec_ctx.thread_type = "AUTO"
 
     @property
     def codec_name(self) -> str:
