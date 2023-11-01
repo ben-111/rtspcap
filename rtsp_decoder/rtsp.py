@@ -138,7 +138,11 @@ class RTSPDataExtractor:
                     )
                     rtsp_sessions[four_tuple].sdp = sdp
 
-                if packet["RTSP"].has_field("transport"):
+                if (
+                    packet["RTSP"].has_field("transport")
+                    and packet["RTSP"].has_field("status")
+                    and int(packet["RTSP"].status) == 200
+                ):
                     transport_header = RTSPTransportHeader.parse(
                         packet["RTSP"].transport
                     )
