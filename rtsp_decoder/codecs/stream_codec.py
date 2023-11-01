@@ -1,5 +1,3 @@
-from fractions import Fraction
-
 from av.codec import CodecContext
 from av.packet import Packet as AVPacket
 from av.frame import Frame
@@ -23,7 +21,6 @@ class StreamCodec:
         self,
         transport_protocol: str,
         codec_name: str,
-        time_base: Fraction,
         sdp_media: dict,
         transport_specific_data: Any,
     ):
@@ -37,7 +34,6 @@ class StreamCodec:
         )
         self.codec_name = self._transport_codec.codec_name
         self.codec_type = self._transport_codec.codec_type
-        self.time_base = time_base
 
     def handle_packet(
         self,

@@ -1,6 +1,5 @@
 from base64 import b64decode
-from dataclasses import dataclass, field
-from fractions import Fraction
+from dataclasses import dataclass
 import logging
 
 from av.codec import CodecContext
@@ -22,12 +21,8 @@ _H264_INPUT_BUFFER_PADDING_SIZE = 64
 
 @dataclass
 class H264Context:
-    first_seq: Optional[int] = None
-    rtptime: Optional[int] = None
-    time_base: Fraction = field(default_factory=Fraction)
     fragments_buf: bytes = b""
     last_fragment_seq: int = -1
-    fragment_timestamp: int = 0
 
 
 class RTPCodecH264(RTPCodecBase):
@@ -38,12 +33,6 @@ class RTPCodecH264(RTPCodecBase):
     def get_codec_context(
         cls, sdp_media: dict, rtp_info: Optional[RTPInfo]
     ) -> Tuple[CodecContext, Any]:
-        h264_ctx = H264Context()
-
-        if rtp_info is not None:
-            h264_ctx.first_seq = rtp_info.seq
-            h264_ctx.rtptime = rtp_info.rtptime
-
         fmtp = cls._parse_fmtp(sdp_media)
         assert (
             "sprop-parameter-sets" in fmtp
@@ -56,10 +45,8 @@ class RTPCodecH264(RTPCodecBase):
 
         codec_ctx = CodecContext.create(cls.AV_CODEC_NAME, "r")
         codec_ctx.extradata = extradata
-
-        clock_rate_in_hz = sdp_media["rtp"][0]["rate"]
-        h264_ctx.time_base = Fraction(1, clock_rate_in_hz)
-        return codec_ctx, h264_ctx
+        codec_ctx.rate = sdp_media["rtp"][0]["rate"]
+        return codec_ctx, H264Context()
 
     # Taken from ffmpeg: `rtpdec_h264.c:h264_handle_packet`
     @classmethod
@@ -71,14 +58,6 @@ class RTPCodecH264(RTPCodecBase):
     ) -> List[AVPacket]:
         out_packets = []
         if packet is None:
-            logger.debug("Packet is None")
-            if h264_ctx.fragments_buf:
-                out_packet = cls._create_av_packet(
-                    h264_ctx.fragments_buf,
-                    h264_ctx.time_base,
-                    h264_ctx.fragment_timestamp,
-                )
-                logger.debug(f"PTS = {h264_ctx.fragment_timestamp}")
             out_packets.append(cls._create_av_packet())
             return out_packets
 
@@ -87,22 +66,13 @@ class RTPCodecH264(RTPCodecBase):
             logger.error(f"RTP h264 invalid data")
             return
 
-        current_timestamp = int(packet["RTP"].timestamp)
-        if h264_ctx.rtptime is None:
-            logger.debug("Losing packet to get accurate timestamp")
-            h264_ctx.rtptime = current_timestamp
-            return out_packets
-
         nal = buf[0]
         nal_type = nal & 0x1F
 
         if nal_type >= 1 and nal_type <= 23:
             nal_type = 1
 
-        current_timestamp -= h264_ctx.rtptime
-        logger.debug(
-            f"Parsing H264 RTP packet with NAL type {nal_type}, timestamp {current_timestamp}"
-        )
+        logger.debug(f"Parsing H264 RTP packet with NAL type {nal_type}")
 
         current_seq = int(packet["RTP"].seq)
         if (
@@ -110,30 +80,20 @@ class RTPCodecH264(RTPCodecBase):
             and current_seq > 0
             and current_seq == (h264_ctx.last_fragment_seq + 1)
         ):
-            out_packet = cls._create_av_packet(
-                h264_ctx.fragments_buf, h264_ctx.time_base, h264_ctx.fragment_timestamp
-            )
-            logger.debug(f"PTS = {h264_ctx.fragment_timestamp}")
+            out_packet = cls._create_av_packet(h264_ctx.fragments_buf)
             h264_ctx.fragments_buf = b""
             h264_ctx.last_fragment_seq = -1
             out_packets.append(out_packet)
 
         if nal_type == 0 or nal_type == 1:
-            out_packet = cls._create_av_packet(
-                H264_STARTING_SEQUENCE + buf, h264_ctx.time_base, current_timestamp
-            )
-            logger.debug(f"PTS = {current_timestamp}")
+            out_packet = cls._create_av_packet(H264_STARTING_SEQUENCE + buf)
             out_packets.append(out_packet)
         elif nal_type == 24:
             # One packet, multiple NALs
-            out_packets += cls._handle_aggregated_packet(
-                h264_ctx, buf[1:], current_timestamp
-            )
+            out_packets += cls._handle_aggregated_packet(buf[1:])
         elif nal_type == 28:
             # Fragmented NAL
-            out_packets += cls._handle_fu_a_packet(
-                h264_ctx, buf, current_seq, current_timestamp
-            )
+            out_packets += cls._handle_fu_a_packet(h264_ctx, buf, current_seq)
         else:
             logger.error(f"Got H264 RTP packet with unsupported NAL type: {nal_type}")
 
@@ -141,7 +101,7 @@ class RTPCodecH264(RTPCodecBase):
 
     @classmethod
     def _handle_fu_a_packet(
-        cls, h264_ctx: H264Context, buf: bytes, seq: int, timestamp: int
+        cls, h264_ctx: H264Context, buf: bytes, seq: int
     ) -> List[AVPacket]:
         out_packets = []
         if len(buf) < 3:
@@ -165,12 +125,8 @@ class RTPCodecH264(RTPCodecBase):
         buffer_to_parse = b""
         if start_bit:
             logger.debug("Starting fragment")
-            h264_ctx.fragment_timestamp = timestamp
             if h264_ctx.fragments_buf:
-                out_packet = cls._create_av_packet(
-                    h264_ctx.fragments_buf, h264_ctx.time_base, timestamp
-                )
-                logger.debug(f"PTS = {timestamp}")
+                out_packet = cls._create_av_packet(h264_ctx.fragments_buf)
                 h264_ctx.fragments_buf = b""
                 h264_ctx.last_fragment_seq = -1
                 out_packets.append(out_packet)
@@ -189,9 +145,7 @@ class RTPCodecH264(RTPCodecBase):
         return out_packets
 
     @classmethod
-    def _handle_aggregated_packet(
-        cls, h264_ctx: H264Context, buf: bytes, timestamp: int
-    ) -> List[AVPacket]:
+    def _handle_aggregated_packet(cls, buf: bytes) -> List[AVPacket]:
         """
         An aggregated packet is an array of NAL units.
         A NAL unit is a `uint16 nal_size` followed by a buffer of that size
@@ -203,11 +157,8 @@ class RTPCodecH264(RTPCodecBase):
             buf = buf[2:]
             if nal_size <= len(buf):
                 out_packet = cls._create_av_packet(
-                    H264_STARTING_SEQUENCE + buf[:nal_size],
-                    h264_ctx.time_base,
-                    timestamp,
+                    H264_STARTING_SEQUENCE + buf[:nal_size]
                 )
-                logger.debug(f"PTS = {timestamp}")
                 out_packets.append(out_packet)
 
                 buf = buf[nal_size:]
