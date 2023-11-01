@@ -77,12 +77,17 @@ class RTSPDataExtractor:
             self.logger.error("No RTP streams found")
             return streams
 
+        for key, rtsp_session in rtsp_sessions.copy().items():
+            if rtsp_session.sdp is None:
+                self.logger.warning("Found RTSP session without SDP file")
+                rtsp_sessions.pop(key)
+
         if not rtsp_sessions:
             if backup_sdp_path is None:
                 self.logger.error(
                     "No RTSP sessions found; Consider providing an SDP file"
                 )
-                return streams
+                return {}
             else:
                 self.logger.warning("No RTSP sessions found; Using provided SDP file")
                 with open(backup_sdp_path, "r") as f:
@@ -90,11 +95,6 @@ class RTSPDataExtractor:
                     fake_rtsp_session = RTSPSessionInfo(sdp=sdp)
                     fake_four_tuple = FourTuple()
                     rtsp_sessions[fake_four_tuple] = fake_rtsp_session
-
-        for key, rtsp_session in rtsp_sessions.copy().items():
-            if rtsp_session.sdp is None:
-                self.logger.warning("Found RTSP session without SDP file")
-                rtsp_sessions.pop(key)
 
         out_streams = streams.copy()
         for ssrc, stream_info in streams.items():
@@ -179,6 +179,7 @@ class RTSPDataExtractor:
         if four_tuple is not None:
             return four_tuple
 
+        self.logger.debug("Could not associate RTP stream by SSRC, using proximity")
         four_tuple = self._find_rtsp_session_by_proximity(
             rtsp_sessions, stream_info.first_frame_number
         )
@@ -221,6 +222,9 @@ class RTSPDataExtractor:
         if closest_rtsp_session_four_tuple is not None:
             return closest_rtsp_session_four_tuple
 
+        self.logger.debug(
+            "Could not find SDP before the start of the RTP stream, using SDP file found after the stream"
+        )
         for four_tuple, rtsp_session in reversed(rtsp_sessions_by_frame_num):
             session_frame_number = rtsp_session.first_frame_number
             if frame_number > session_frame_number:
