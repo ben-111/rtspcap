@@ -103,8 +103,11 @@ class RTPDecoder:
                         self.logger.debug(
                             f"Could not find packet with sequence number {expected_seq}; Likely packet loss"
                         )
-                        expected_seq += 1
-                        expected_seq %= 1 << 16
+                        if out_of_order_packets:
+                            expected_seq = min(out_of_order_packets.keys())
+                        else:
+                            expected_seq += 1
+                            expected_seq %= 1 << 16
 
                     continue
                 else:
