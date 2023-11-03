@@ -64,12 +64,12 @@ class RTSPDataExtractor:
     Find the first RTSP stream, and extract from it the stream name, the sdp and the tracks
     """
 
-    def __init__(self, pcap_path: str, backup_sdp_path: Optional[str] = None):
+    def __init__(self, pcap_path: str, backup_sdp: Optional[str] = None):
         self.logger = logging.getLogger(__name__)
-        self.streams = self._extract_rtsp_data(pcap_path, backup_sdp_path)
+        self.streams = self._extract_rtsp_data(pcap_path, backup_sdp)
 
     def _extract_rtsp_data(
-        self, pcap_path: str, backup_sdp_path: Optional[str] = None
+        self, pcap_path: str, backup_sdp: Optional[str] = None
     ) -> Dict[TypeSSRC, RTPStreamInfo]:
         # We disable sdp so we can access the SDP data directly
         with FileCapture(
@@ -89,18 +89,17 @@ class RTSPDataExtractor:
                 rtsp_sessions.pop(key)
 
         if not rtsp_sessions:
-            if backup_sdp_path is None:
+            if backup_sdp is None:
                 self.logger.error(
                     "No RTSP sessions found; Consider providing an SDP file"
                 )
                 return {}
             else:
                 self.logger.warning("No RTSP sessions found; Using provided SDP file")
-                with open(backup_sdp_path, "r") as f:
-                    sdp = sdp_transform.parse(f.read())
-                    fake_rtsp_session = RTSPSessionInfo(sdp=sdp)
-                    fake_four_tuple = FourTuple()
-                    rtsp_sessions[fake_four_tuple] = fake_rtsp_session
+                sdp = sdp_transform.parse(backup_sdp)
+                fake_rtsp_session = RTSPSessionInfo(sdp=sdp)
+                fake_four_tuple = FourTuple()
+                rtsp_sessions[fake_four_tuple] = fake_rtsp_session
 
         out_streams = streams.copy()
         for ssrc, stream_info in streams.items():
