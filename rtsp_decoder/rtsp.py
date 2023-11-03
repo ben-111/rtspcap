@@ -33,10 +33,16 @@ class RTSPTransportHeader(NamedTuple):
 
 
 class FourTuple(NamedTuple):
-    src_ip: str = ""
-    dst_ip: str = ""
-    src_port: int = 0
-    dst_port: int = 0
+    ips: str = ""
+    ports: str = ""
+
+    @classmethod
+    def create(
+        cls, src_ip: str, dst_ip: str, src_port: int, dst_port: int
+    ) -> "FourTuple":
+        ips = ":".join(sorted([src_ip, dst_ip]))
+        ports = ":".join(sorted([str(src_port), str(dst_port)]))
+        return cls(ips=ips, ports=ports)
 
 
 @dataclass
@@ -255,7 +261,7 @@ class RTSPDataExtractor:
     @staticmethod
     def _get_tcp_four_tuple(packet: Packet) -> FourTuple:
         assert "IP" in packet and "TCP" in packet
-        return FourTuple(
+        return FourTuple.create(
             src_ip=str(packet["IP"].src),
             dst_ip=str(packet["IP"].dst),
             src_port=int(packet["TCP"].srcport),
