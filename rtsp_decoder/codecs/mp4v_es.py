@@ -15,7 +15,5 @@ class CodecMP4V_ES(CodecBase):
         codec_ctx = CodecContext.create(cls.AV_CODEC_NAME, "r")
         if "config" in fmtp:
             codec_ctx.extradata = bytes.fromhex(fmtp["config"])
-        else:
-            self.logger.error("Expected config attribute in fmtp")
 
         return codec_ctx, None

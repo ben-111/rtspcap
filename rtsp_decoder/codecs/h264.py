@@ -24,14 +24,12 @@ class CodecH264(CodecBase):
     @classmethod
     def get_codec_context(cls, sdp_media: dict) -> Tuple[CodecContext, Any]:
         fmtp = cls._parse_fmtp(sdp_media)
-        assert (
-            "sprop-parameter-sets" in fmtp
-        ), "Expected sprop-parameter-sets in fmtp of h264"
         extradata = b""
-        for sprop_parameter_set in fmtp["sprop-parameter-sets"].split(","):
-            extradata += H264_STARTING_SEQUENCE
-            extradata += b64decode(sprop_parameter_set)
-            extradata += b"\x00" * _H264_INPUT_BUFFER_PADDING_SIZE
+        if "sprop-parameter-sets" in fmtp:
+            for sprop_parameter_set in fmtp["sprop-parameter-sets"].split(","):
+                extradata += H264_STARTING_SEQUENCE
+                extradata += b64decode(sprop_parameter_set)
+                extradata += b"\x00" * _H264_INPUT_BUFFER_PADDING_SIZE
 
         codec_ctx = CodecContext.create(cls.AV_CODEC_NAME, "r")
         codec_ctx.extradata = extradata

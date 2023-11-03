@@ -117,8 +117,6 @@ class CodecMPEG4_GENERIC(CodecBase):
         codec_ctx = CodecContext.create(cls.AV_CODEC_NAME, "r")
         if "config" in fmtp:
             codec_ctx.extradata = bytes.fromhex(fmtp["config"])
-        else:
-            logger.error("Expected config attribute in fmtp")
 
         rtp_data = sdp_media["rtp"][0]
         codec_ctx.rate = rtp_data["rate"]
