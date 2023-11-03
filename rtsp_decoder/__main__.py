@@ -76,8 +76,8 @@ def main(
         logger.info(f"Processing stream {stream_num}, saving to `{output_path}`")
         try:
             with GetContainer(output_path) as container:
-                rtp_decoder = RTPDecoder(ssrc, stream_info)
-                rtp_decoder.decode_stream(input_path, container, fast)
+                rtp_decoder = RTPDecoder(ssrc, stream_info, fast)
+                rtp_decoder.decode_stream(input_path, container)
         except Exception as e:
             logger.error(f"{e}, skipping")
 

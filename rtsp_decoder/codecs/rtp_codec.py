@@ -43,8 +43,31 @@ class RTPCodec:
         return self._codec_name
 
     @property
+    def av_codec_name(self) -> str:
+        return self._codec.AV_CODEC_NAME
+
+    @property
     def codec_type(self) -> str:
         return self._codec_type
+
+    @property
+    def ready(self) -> bool:
+        if self.codec_type == "video":
+            return self._codec_ctx.width != 0
+        else:
+            return True
+
+    @property
+    def rate(self) -> int:
+        return self._codec_ctx.rate
+
+    @property
+    def width(self) -> int:
+        return self._codec_ctx.width
+
+    @property
+    def height(self) -> int:
+        return self._codec_ctx.height
 
     def handle_packet(
         self,
