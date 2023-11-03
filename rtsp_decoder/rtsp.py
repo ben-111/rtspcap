@@ -206,7 +206,7 @@ class RTSPDataExtractor:
             for transport_header in session_info.transport_headers:
                 if (
                     "ssrc" in transport_header.options
-                    and transport_header.options["ssrc"] == ssrc
+                    and int(transport_header.options["ssrc"], 16) == ssrc
                 ):
                     return four_tuple
 
