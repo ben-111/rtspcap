@@ -7,6 +7,7 @@ from pyshark.packet.packet import Packet
 
 from rtsp_decoder.codecs.codec_base import CodecBase
 from rtsp_decoder.codecs.h264 import CodecH264
+from rtsp_decoder.codecs.h265 import CodecH265
 from rtsp_decoder.codecs.mp4v_es import CodecMP4V_ES
 from rtsp_decoder.codecs.mpeg4_generic import CodecMPEG4_GENERIC
 
@@ -16,6 +17,7 @@ from typing import List, Dict, Optional
 class RTPCodec:
     _CODEC_MAP: Dict[str, CodecBase] = {
         "h264": CodecH264,
+        "h265": CodecH265,
         "mp4v-es": CodecMP4V_ES,
         "mpeg4-generic": CodecMPEG4_GENERIC,
     }

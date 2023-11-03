@@ -14,7 +14,7 @@ from typing import List, Optional, Tuple, Any
 logger = logging.getLogger(__name__)
 
 H264_STARTING_SEQUENCE = b"\x00\x00\x00\x01"
-_H264_INPUT_BUFFER_PADDING_SIZE = 64
+H264_INPUT_BUFFER_PADDING_SIZE = 64
 
 
 class CodecH264(CodecBase):
@@ -29,7 +29,7 @@ class CodecH264(CodecBase):
             for sprop_parameter_set in fmtp["sprop-parameter-sets"].split(","):
                 extradata += H264_STARTING_SEQUENCE
                 extradata += b64decode(sprop_parameter_set)
-                extradata += b"\x00" * _H264_INPUT_BUFFER_PADDING_SIZE
+                extradata += b"\x00" * H264_INPUT_BUFFER_PADDING_SIZE
 
         codec_ctx = CodecContext.create(cls.AV_CODEC_NAME, "r")
         codec_ctx.extradata = extradata
@@ -63,7 +63,7 @@ class CodecH264(CodecBase):
             out_packets = codec_ctx.parse(H264_STARTING_SEQUENCE + buf)
         elif nal_type == 24:
             # One packet, multiple NALs
-            out_packets = cls._handle_aggregated_packet(codec_ctx, buf[1:])
+            out_packets = cls.handle_aggregated_packet(codec_ctx, buf[1:])
         elif nal_type == 28:
             # Fragmented NAL
             out_packets = cls._handle_fu_a_packet(codec_ctx, buf)
@@ -85,17 +85,25 @@ class CodecH264(CodecBase):
         nal = fu_indicator & 0xE0 | nal_type
 
         buf = buf[2:]
+        return cls.handle_frag_packet(
+            codec_ctx, buf, start_bit, nal.to_bytes(1, byteorder="little")
+        )
+
+    @classmethod
+    def handle_frag_packet(
+        cls, codec_ctx: CodecContext, buf: bytes, start_bit: int, nal_header: bytes
+    ) -> List[AVPacket]:
         buffer_to_parse = b""
         if start_bit:
             buffer_to_parse += H264_STARTING_SEQUENCE
-            buffer_to_parse += nal.to_bytes(1, byteorder="little")
+            buffer_to_parse += nal_header
         buffer_to_parse += buf
 
         return codec_ctx.parse(buffer_to_parse)
 
     @classmethod
-    def _handle_aggregated_packet(
-        cls, codec_ctx: CodecContext, buf: bytes
+    def handle_aggregated_packet(
+        cls, codec_ctx: CodecContext, buf: bytes, skip_between: int = 0
     ) -> List[AVPacket]:
         """
         An aggregated packet is an array of NAL units.
@@ -106,11 +114,11 @@ class CodecH264(CodecBase):
             nal_size_bytes = buf[:2]
             nal_size = int.from_bytes(nal_size_bytes, byteorder="little")
             buf = buf[2:]
-            if nal_size <= len(buf):
-                out_packets += codec_ctx.parse(H264_STARTING_SEQUENCE + buf[:nal_size])
-                buf = buf[nal_size:]
-            else:
+            if nal_size > len(buf):
                 logger.error(f"nal size exceeds length: {nal_size} > {len(buf)}")
                 break
+
+            out_packets += codec_ctx.parse(H264_STARTING_SEQUENCE + buf[:nal_size])
+            buf = buf[nal_size + skip_between :]
 
         return out_packets
