@@ -3,7 +3,7 @@ import logging
 from av.packet import Packet as AVPacket
 from av.frame import Frame
 
-from pyshark.packet.packet import Packet
+from rtsp_decoder.task import RTPPacket
 
 from rtsp_decoder.codecs.codec_base import CodecBase
 from rtsp_decoder.codecs.h264 import CodecH264
@@ -71,7 +71,7 @@ class RTPCodec:
 
     def handle_packet(
         self,
-        packet: Packet,
+        packet: RTPPacket,
     ) -> List[AVPacket]:
         return self._codec.handle_packet(self._codec_ctx, packet, self._payload_context)
 

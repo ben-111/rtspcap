@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from av.codec import CodecContext
 from av.packet import Packet as AVPacket
 
-from pyshark.packet.packet import Packet
+from rtsp_decoder.task import RTPPacket
 
 from rtsp_decoder.codecs.codec_base import CodecBase
 
@@ -160,7 +160,7 @@ class CodecMPEG4_GENERIC(CodecBase):
     def handle_packet(
         cls,
         codec_ctx: CodecContext,
-        packet: Optional[Packet],
+        packet: Optional[RTPPacket],
         aac_ctx: AACContext,
     ) -> List[AVPacket]:
         """
@@ -195,7 +195,7 @@ class CodecMPEG4_GENERIC(CodecBase):
         if packet is None:
             return out_packets
 
-        buf = bytes.fromhex(packet["RTP"].payload.raw_value)
+        buf = packet.payload
         try:
             au_headers, au_headers_section_size = cls._parse_mp4_au_headers(
                 aac_ctx, buf
@@ -225,7 +225,11 @@ class CodecMPEG4_GENERIC(CodecBase):
 
     @classmethod
     def _handle_fragmented_packet(
-        cls, aac_ctx: AACContext, au_headers: List[AUHeader], packet: Packet, buf: bytes
+        cls,
+        aac_ctx: AACContext,
+        au_headers: List[AUHeader],
+        packet: RTPPacket,
+        buf: bytes,
     ) -> List[AVPacket]:
         out_packets = []
         if len(aac_ctx.buf) == 0:
@@ -235,10 +239,10 @@ class CodecMPEG4_GENERIC(CodecBase):
                 return out_packets
 
             aac_ctx.expected_buf_size = au_headers[0].size
-            aac_ctx.timestamp = int(packet["RTP"].timestamp)
+            aac_ctx.timestamp = packet.timestamp
 
         if (
-            aac_ctx.timestamp != int(packet["RTP"].timestamp)
+            aac_ctx.timestamp != packet.timestamp
             or au_headers[0].size != aac_ctx.expected_buf_size
             or len(aac_ctx.buf) + len(buf) > cls.MAX_AAC_HBR_FRAME_SIZE
         ):
@@ -249,7 +253,7 @@ class CodecMPEG4_GENERIC(CodecBase):
 
         aac_ctx.buf += buf
 
-        if not int(packet["RTP"].marker):
+        if not packet.marker:
             # There are more fragments
             return out_packets
 

@@ -7,17 +7,9 @@ from av.container import Container
 
 from rtsp_decoder.rtsp import RTSPDataExtractor
 from rtsp_decoder.rtp import RTPDecoder
+from rtsp_decoder.task import TaskType
 
 from typing import Optional, Dict
-
-
-@contextmanager
-def GetContainer(output_path: str) -> Container:
-    c = av.open(output_path, format="mp4", mode="w")
-    try:
-        yield c
-    finally:
-        c.close()
 
 
 class RTSPDecoder:
@@ -88,19 +80,18 @@ class RTSPDecoder:
 
         try:
             for task in rtsp_extractor.process_next():
-                self.logger.debug(f"Got task with type {task.ttype.name}")
-                # breakpoint()
-                # if task.ttype == TaskType.CREATE_DECODER:
-                #     output_filename = f"{self.output_prefix}{task.body.ident}.mp4"
-                #     output_path = os.path.join(self.output_dir, output_filename)
-                #     rtp_decoder = RTPDecoder(
-                #         output_path, task.body.sdp_media, self.fast
-                #     )
-                #     rtp_decoders[task.body.ident] = rtp_decoder
-                # elif task.ttype == TaskType.PROCESS_RTP_PACKET:
-                #     rtp_decoder = rtp_decoders[task.body.ident]
-                #     rtp_decoder.process_rtp_packet(task.body.rtp_packet)
-                ...
-        finally:
-            if not rtp_decoders:
-                self.logger.warning("No RTSP streams found")
+                if task.ttype == TaskType.CREATE_DECODER:
+                    output_filename = f"{self.output_prefix}{task.body.ident}.mp4"
+                    output_path = os.path.join(self.output_dir, output_filename)
+                    rtp_decoder = RTPDecoder(
+                        output_path, task.body.sdp_media, self.fast
+                    )
+                    rtp_decoders[task.body.ident] = rtp_decoder
+                elif task.ttype == TaskType.PROCESS_RTP_PACKET:
+                    rtp_decoder = rtp_decoders[task.body.ident]
+                    rtp_decoder.process_rtp_packet(task.body.rtp_packet)
+        except Exception:
+            raise
+        # finally:
+        #     if not rtp_decoders:
+        #         self.logger.warning("No RTSP streams found")

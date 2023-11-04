@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from av.codec import CodecContext
 from av.packet import Packet as AVPacket
 
-from pyshark.packet.packet import Packet
+from rtsp_decoder.task import RTPPacket
 
 from typing import Dict, List, Optional, Tuple, Any
 
@@ -22,13 +22,12 @@ class CodecBase(ABC):
     def handle_packet(
         cls,
         codec_ctx: CodecContext,
-        packet: Optional[Packet],
+        packet: Optional[RTPPacket],
         payload_ctx: Any,
     ) -> List[AVPacket]:
         out_packets = []
         if packet is not None:
-            chunk = bytes.fromhex(packet["RTP"].payload.raw_value)
-            out_packets = codec_ctx.parse(chunk)
+            out_packets = codec_ctx.parse(packet.payload)
         return out_packets
 
     @staticmethod

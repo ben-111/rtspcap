@@ -6,7 +6,7 @@ from rtsp_decoder.codecs.codec_base import CodecBase
 from av.codec import CodecContext
 from av.packet import Packet as AVPacket
 
-from pyshark.packet.packet import Packet
+from rtsp_decoder.task import RTPPacket
 
 from typing import List, Optional, Tuple, Any
 
@@ -40,14 +40,14 @@ class CodecH264(CodecBase):
     def handle_packet(
         cls,
         codec_ctx: CodecContext,
-        packet: Optional[Packet],
+        packet: Optional[RTPPacket],
         _: Any,
     ) -> List[AVPacket]:
         out_packets = []
         if packet is None:
             return out_packets
 
-        buf = bytes.fromhex(packet["RTP"].payload.raw_value)
+        buf = packet.payload
         if len(buf) == 0:
             logger.error(f"RTP h264 invalid data")
             return

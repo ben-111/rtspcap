@@ -28,12 +28,8 @@ if __name__ == "__main__":
     parser.add_argument("-v", "--verbose", action="store_true", help="Add debug prints")
     args = parser.parse_args()
 
-    try:
-        rtsp_decoder = RTSPDecoder(
-            args.input, args.prefix, args.output_dir, args.sdp, args.fast, args.verbose
-        )
-        rtsp_decoder.run()
-        sys.exit()
-    except Exception as e:
-        print(e, file=sys.stderr)
-        sys.exit(1)
+    rtsp_decoder = RTSPDecoder(
+        args.input, args.prefix, args.output_dir, args.sdp, args.fast, args.verbose
+    )
+    rtsp_decoder.run()
+    sys.exit()

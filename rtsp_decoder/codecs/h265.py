@@ -11,7 +11,7 @@ from rtsp_decoder.codecs.h264 import H264_INPUT_BUFFER_PADDING_SIZE
 from av.codec import CodecContext
 from av.packet import Packet as AVPacket
 
-from pyshark.packet.packet import Packet
+from rtsp_decoder.task import RTPPacket
 
 from typing import List, Optional, Tuple, Any
 
@@ -95,7 +95,7 @@ class CodecH265(CodecBase):
     def handle_packet(
         cls,
         codec_ctx: CodecContext,
-        packet: Optional[Packet],
+        packet: Optional[RTPPacket],
         h265_ctx: H265Context,
     ) -> List[AVPacket]:
         """
@@ -120,7 +120,7 @@ class CodecH265(CodecBase):
         if packet is None:
             return out_packets
 
-        buf = bytes.fromhex(packet["RTP"].payload.raw_value)
+        buf = packet.payload
         rtp_pl = buf
         if len(buf) < RTP_HEVC_PAYLOAD_HEADER_SIZE + 1:
             logger.error(f"Too short RTP/HEVC packet, got {len(buf)} bytes")
