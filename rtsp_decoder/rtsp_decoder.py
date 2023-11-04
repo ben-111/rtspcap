@@ -88,6 +88,8 @@ class RTSPDecoder:
 
         try:
             for task in rtsp_extractor.process_next():
+                self.logger.debug(f"Got task with type {task.ttype.name}")
+                # breakpoint()
                 # if task.ttype == TaskType.CREATE_DECODER:
                 #     output_filename = f"{self.output_prefix}{task.body.ident}.mp4"
                 #     output_path = os.path.join(self.output_dir, output_filename)

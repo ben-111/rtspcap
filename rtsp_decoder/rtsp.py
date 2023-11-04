@@ -170,9 +170,20 @@ class RTSPDataExtractor:
                         create_decoder = CreateDecoderTaskBody(
                             ident=ident, sdp_media=sdp_media
                         )
-                        task = Task(ttype=TaskType.CREATE_DECODER, body=create_decoder)
-                        yield task
+                        create_task = Task(
+                            ttype=TaskType.CREATE_DECODER, body=create_decoder
+                        )
+                        yield create_task
                         ssrc_to_ident[ssrc] = ident
+
+                        rtp_packet = RTPPacket.from_pyshark(packet)
+                        process_rtp_packet = ProcessRTPPacketTaskBody(
+                            ident=ident, rtp_packet=rtp_packet
+                        )
+                        process_task = Task(
+                            ttype=TaskType.PROCESS_RTP_PACKET, body=process_rtp_packet
+                        )
+                        yield process_task
 
                 elif "TCP" in packet and "RTSP" in packet:
                     five_tuple = FiveTuple.from_pyshark(packet)
