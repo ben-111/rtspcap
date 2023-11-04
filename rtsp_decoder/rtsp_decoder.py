@@ -79,7 +79,7 @@ class RTSPDecoder:
 
         self.fast = fast
 
-    def run(self) -> int:
+    def run(self) -> None:
         """Run the decoder. Returns an error code."""
 
         # The new pipeline idea

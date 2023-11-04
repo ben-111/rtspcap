@@ -32,7 +32,8 @@ if __name__ == "__main__":
         rtsp_decoder = RTSPDecoder(
             args.input, args.prefix, args.output_dir, args.sdp, args.fast, args.verbose
         )
-        sys.exit(rtsp_decoder.run())
+        rtsp_decoder.run()
+        sys.exit()
     except Exception as e:
         print(e, file=sys.stderr)
         sys.exit(1)
