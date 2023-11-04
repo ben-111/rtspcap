@@ -6,7 +6,6 @@ from av.frame import Frame
 from pyshark import FileCapture
 from pyshark.packet.packet import Packet
 
-from rtsp_decoder.rtsp import RTPStreamInfo
 from rtsp_decoder.sdp import get_codec_name_from_sdp_media
 
 from rtsp_decoder.codecs.rtp_codec import RTPCodec
@@ -18,10 +17,9 @@ class RTPDecoder:
     MAX_OUT_OF_ORDER_PACKETS = 50
     FRAME_BUFFER_SIZE = 100
 
-    def __init__(self, ssrc: int, stream_info: RTPStreamInfo, fast: bool = False):
+    def __init__(self, output_path: str, sdp_media: dict, fast: bool = False):
         self.logger = logging.getLogger(__name__)
-        self._display_filter = f"rtp.ssrc == {ssrc}"
-        self._sdp_media = stream_info.sdp_media
+        self._sdp_media = sdp_media
         self._frame_buffer: List[Frame] = []
         self._out_stream: Optional[Stream] = None
         self._fast = fast

@@ -1,19 +1,22 @@
+from enum import Enum
 from dataclasses import dataclass, field
-
-from os.path import basename
-from urllib.parse import urlparse
 
 from pyshark import FileCapture
 from pyshark.packet.packet import Packet
 import sdp_transform
 
 from rtsp_decoder.sdp import get_sdp_medias, get_payload_type_from_sdp_media
+from rtsp_decoder.task import (
+    Task,
+    TaskType,
+    CreateDecoderTaskBody,
+    ProcessRTPPacketTaskBody,
+    RTPPacket,
+)
 
-from typing import NamedTuple, Dict, Tuple, List, Optional
+from typing import NamedTuple, Dict, Tuple, List, Optional, Iterator
 
 import logging
-
-TypeSSRC = int
 
 
 class RTSPTransportHeader(NamedTuple):
@@ -23,7 +26,7 @@ class RTSPTransportHeader(NamedTuple):
     @classmethod
     def parse(cls, header_str: str) -> "RTSPTransportHeader":
         transport_header_values = header_str.split(";")
-        protocol = transport_header_values[0]
+        protocol = transport_header_values[0].casefold()
         options = dict()
         for option in transport_header_values[1:]:
             key, value = option.split("=", 1) if "=" in option else (option, None)
@@ -32,31 +35,50 @@ class RTSPTransportHeader(NamedTuple):
         return cls(protocol=protocol, options=options)
 
 
-class FourTuple(NamedTuple):
-    ips: str = ""
-    ports: str = ""
+class IPProto(Enum):
+    TCP = 6
+    UDP = 17
+
+
+class FiveTuple(NamedTuple):
+    src_ip: str
+    dst_ip: str
+    src_port: int
+    dst_port: int
+    proto: IPProto
+
+    def __eq__(self, other: "FiveTuple") -> bool:
+        return self.__hash__() == other.__hash__()
+
+    def __hash__(self) -> int:
+        peer1 = f"{self.src_ip}:{self.src_port}"
+        peer2 = f"{self.dst_ip}:{self.dst_port}"
+        hash_str = ",".join(sorted([peer1, peer2]))
+        return hash((hash_str, self.proto))
 
     @classmethod
-    def create(
-        cls, src_ip: str, dst_ip: str, src_port: int, dst_port: int
-    ) -> "FourTuple":
-        ips = ":".join(sorted([src_ip, dst_ip]))
-        ports = ":".join(sorted([str(src_port), str(dst_port)]))
-        return cls(ips=ips, ports=ports)
+    def from_pyshark(cls, packet: Packet) -> "FiveTuple":
+        assert "IP" in packet and ("TCP" in packet or "UDP" in packet)
+        if "TCP" in packet:
+            proto = IPProto.TCP
+            transport_layer = packet["TCP"]
+        else:
+            proto = IPProto.UDP
+            transport_layer = packet["UDP"]
+
+        return cls(
+            src_ip=str(packet["IP"].src),
+            dst_ip=str(packet["IP"].dst),
+            src_port=int(transport_layer.srcport),
+            dst_port=int(transport_layer.dstport),
+            proto=proto,
+        )
 
 
 @dataclass
 class RTSPSessionInfo:
-    first_frame_number: int = -1
     sdp: Optional[dict] = None
     transport_headers: List[RTSPTransportHeader] = field(default_factory=list)
-
-
-@dataclass
-class RTPStreamInfo:
-    payload_type: int = -1
-    first_frame_number: int = -1
-    sdp_media: Optional[dict] = None
 
 
 class RTSPDataExtractor:
@@ -66,203 +88,177 @@ class RTSPDataExtractor:
 
     def __init__(self, pcap_path: str, backup_sdp: Optional[str] = None):
         self.logger = logging.getLogger(__name__)
-        self.streams = self._extract_rtsp_data(pcap_path, backup_sdp)
+        self._pcap_path: str = pcap_path
+        self._backup_sdp: Optional[str] = backup_sdp
+        self._current_ident: int = 0
 
-    def _extract_rtsp_data(
-        self, pcap_path: str, backup_sdp: Optional[str] = None
-    ) -> Dict[TypeSSRC, RTPStreamInfo]:
+    def process_next(self) -> Iterator[Task]:
+        ssrc_to_ident: Dict[int, int] = {}
+        rtsp_sessions: Dict[FiveTuple, RTSPSessionInfo] = {}
+        invalid_ssrcs: List[int] = []
+
         # We disable sdp so we can access the SDP data directly
         with FileCapture(
-            pcap_path,
+            self._pcap_path,
             display_filter=f"(rtsp.request or rtsp.response) or (rtp.ssrc and rtp.p_type != 0)",
             disable_protocol="sdp",
         ) as capture:
-            streams, rtsp_sessions = self._extract_data_from_capture(capture)
-
-        if not streams:
-            self.logger.error("No RTP streams found")
-            return streams
-
-        for key, rtsp_session in rtsp_sessions.copy().items():
-            if rtsp_session.sdp is None:
-                self.logger.warning("Found RTSP session without SDP file")
-                rtsp_sessions.pop(key)
-
-        if not rtsp_sessions:
-            if backup_sdp is None:
-                self.logger.error(
-                    "No RTSP sessions found; Consider providing an SDP file"
-                )
-                return {}
-            else:
-                self.logger.warning("No RTSP sessions found; Using provided SDP file")
-                sdp = sdp_transform.parse(backup_sdp)
-                fake_rtsp_session = RTSPSessionInfo(sdp=sdp)
-                fake_four_tuple = FourTuple()
-                rtsp_sessions[fake_four_tuple] = fake_rtsp_session
-
-        out_streams = streams.copy()
-        for ssrc, stream_info in streams.items():
-            four_tuple = self._associate_rtp_stream_with_rtsp_stream(
-                ssrc, stream_info, rtsp_sessions
-            )
-            sdp_media = self._get_sdp_media_for_rtp_stream(
-                rtsp_sessions[four_tuple].sdp, stream_info
-            )
-            if sdp_media is None:
-                self.logger.error(
-                    f"Failed to get SDP media for RTP stream with SSRC of {ssrc}; Discarding this stream"
-                )
-                out_streams.pop(ssrc)
-                continue
-
-            out_streams[ssrc].sdp_media = sdp_media
-
-        return out_streams
-
-    def _extract_data_from_capture(
-        self, capture: FileCapture
-    ) -> Tuple[Dict[TypeSSRC, RTPStreamInfo], Dict[FourTuple, RTSPSessionInfo]]:
-        streams: Dict[TypeSSRC, RTPStreamInfo] = {}
-        rtsp_sessions: Dict[FourTuple, RTSPSessionInfo] = {}
-        for packet in capture:
-            if "TCP" in packet and "RTSP" in packet:
-                four_tuple = self._get_tcp_four_tuple(packet)
-                if four_tuple not in rtsp_sessions:
-                    rtsp_sessions[four_tuple] = RTSPSessionInfo(
-                        first_frame_number=int(packet.frame_info.number)
-                    )
-
+            for packet in capture:
                 if (
-                    packet["RTSP"].has_field("data")
-                    and packet["RTSP"].has_field("content_type")
-                    and packet["RTSP"].content_type.casefold() == "application/sdp"
+                    "RTP" in packet
+                    and packet["RTP"].has_field("ssrc")
+                    and packet["RTP"].has_field("p_type")
+                    and packet["RTP"].has_field("payload")
                 ):
-                    sdp = sdp_transform.parse(
-                        bytes.fromhex(packet["RTSP"].data.raw_value).decode()
-                    )
-                    rtsp_sessions[four_tuple].sdp = sdp
+                    rtp_layer = packet["RTP"]
+                    ssrc = int(rtp_layer.ssrc, 16)
 
-                if (
-                    packet["RTSP"].has_field("transport")
-                    and packet["RTSP"].has_field("status")
-                    and int(packet["RTSP"].status) == 200
-                ):
-                    transport_header = RTSPTransportHeader.parse(
-                        packet["RTSP"].transport
-                    )
-                    rtsp_sessions[four_tuple].transport_headers.append(transport_header)
+                    if ssrc in invalid_ssrcs:
+                        continue
 
-            if (
-                "RTP" in packet
-                and packet["RTP"].has_field("ssrc")
-                and packet["RTP"].has_field("p_type")
-            ):
-                stream_id = int(packet["RTP"].ssrc, 16)
-                if stream_id in streams:
-                    continue
+                    payload_type = int(rtp_layer.p_type)
+                    try:
+                        ident = ssrc_to_ident[ssrc]
+                        rtp_packet = RTPPacket.from_pyshark(packet)
+                        process_rtp_packet = ProcessRTPPacketTaskBody(
+                            ident=ident, rtp_packet=rtp_packet
+                        )
+                        task = Task(
+                            ttype=TaskType.PROCESS_RTP_PACKET, body=process_rtp_packet
+                        )
+                        yield task
+                    except KeyError:
+                        rtsp_five_tuple, th_index = self._find_rtsp_stream(
+                            ssrc, FiveTuple.from_pyshark(packet), rtsp_sessions
+                        )
+                        if rtsp_five_tuple is None:
+                            self.logger.error(
+                                "Could not associate RTP packet with an RTSP stream, discarding it"
+                            )
+                            continue
 
-                streams[stream_id] = RTPStreamInfo(
-                    payload_type=int(packet["RTP"].p_type),
-                    first_frame_number=int(packet.frame_info.number),
-                )
+                        if rtsp_sessions[rtsp_five_tuple].sdp is None:
+                            if self._backup_sdp is None:
+                                self.logger.error(
+                                    f"Could not find SDP of RTP stream with ssrc {ssrc}, discarding stream"
+                                )
+                                invalid_ssrcs.append(ssrc)
+                                continue
 
-        return streams, rtsp_sessions
+                            self.logger.warning(
+                                f"Could not find SDP of RTP stream with ssrc {ssrc}, using backup SDP"
+                            )
+                            rtsp_sessions[rtsp_five_tuple].sdp = self._backup_sdp
 
-    def _associate_rtp_stream_with_rtsp_stream(
-        self,
-        ssrc: TypeSSRC,
-        stream_info: RTPStreamInfo,
-        rtsp_sessions: Dict[FourTuple, RTSPSessionInfo],
-    ) -> FourTuple:
+                        rtsp_sessions[rtsp_five_tuple].transport_headers.pop(th_index)
+                        rtsp_session = rtsp_sessions[rtsp_five_tuple]
+                        if not rtsp_session.transport_headers:
+                            rtsp_sessions.pop(rtsp_five_tuple)
+
+                        sdp_media = self._get_sdp_media_for_rtp_stream(
+                            rtsp_session.sdp, payload_type
+                        )
+
+                        if sdp_media is None:
+                            self.logger.error(
+                                "Could not find SDP media of RTP stream in SDP, discarding stream"
+                            )
+                            invalid_ssrcs.append(ssrc)
+                            continue
+
+                        ident = self._get_next_ident()
+                        create_decoder = CreateDecoderTaskBody(
+                            ident=ident, sdp_media=sdp_media
+                        )
+                        task = Task(ttype=TaskType.CREATE_DECODER, body=create_decoder)
+                        yield task
+                        ssrc_to_ident[ssrc] = ident
+
+                elif "TCP" in packet and "RTSP" in packet:
+                    five_tuple = FiveTuple.from_pyshark(packet)
+                    if five_tuple not in rtsp_sessions:
+                        rtsp_sessions[five_tuple] = RTSPSessionInfo()
+
+                    if (
+                        packet["RTSP"].has_field("data")
+                        and packet["RTSP"].has_field("content_type")
+                        and packet["RTSP"].content_type.casefold() == "application/sdp"
+                    ):
+                        sdp = sdp_transform.parse(
+                            bytes.fromhex(packet["RTSP"].data.raw_value).decode()
+                        )
+                        rtsp_sessions[five_tuple].sdp = sdp
+
+                    if (
+                        packet["RTSP"].has_field("transport")
+                        and packet["RTSP"].has_field("status")
+                        and int(packet["RTSP"].status) == 200
+                    ):
+                        transport_header = RTSPTransportHeader.parse(
+                            packet["RTSP"].transport
+                        )
+                        rtsp_sessions[five_tuple].transport_headers.append(
+                            transport_header
+                        )
+
+    def _get_next_ident(self) -> int:
+        ident = self._current_ident
+        self._current_ident += 1
+        return ident
+
+    @classmethod
+    def _find_rtsp_stream(
+        cls,
+        ssrc: int,
+        five_tuple: FiveTuple,
+        rtsp_sessions: Dict[FiveTuple, RTSPSessionInfo],
+    ) -> Tuple[Optional[FiveTuple], int]:
         """
-        Try and associate each RTP stream with an SDP media using a number
-        of techniques, from the most accurate to the least.
-
-        The techniques in order of accuracy (best is first):
-        1. SSRC association from transport headers
-        2. Taking the last rtsp session from packet order
-        3. Taking the next rtsp session from packet order
+        Associate an RTP stream with an RTSP stream using the transport headers in
+        the RTSP stream.
         """
-        four_tuple = self._find_rtsp_session_by_ssrc(rtsp_sessions, ssrc)
-        if four_tuple is not None:
-            return four_tuple
-
-        self.logger.debug("Could not associate RTP stream by SSRC, using proximity")
-        four_tuple = self._find_rtsp_session_by_proximity(
-            rtsp_sessions, stream_info.first_frame_number
-        )
-
-        return four_tuple
-
-    def _find_rtsp_session_by_ssrc(
-        self, rtsp_sessions: Dict[FourTuple, RTSPSessionInfo], ssrc: TypeSSRC
-    ) -> Optional[FourTuple]:
-        for four_tuple, session_info in rtsp_sessions.items():
-            if not session_info.transport_headers:
-                continue
-
-            for transport_header in session_info.transport_headers:
+        for rtsp_five_tuple, rtsp_session in rtsp_sessions.items():
+            for i, transport in enumerate(rtsp_session.transport_headers):
                 if (
-                    "ssrc" in transport_header.options
-                    and int(transport_header.options["ssrc"], 16) == ssrc
+                    "ssrc" in transport.options
+                    and int(transport.options["ssrc"], 16) == ssrc
                 ):
-                    return four_tuple
+                    return rtsp_five_tuple, i
 
-    def _find_rtsp_session_by_proximity(
-        self, rtsp_sessions: Dict[FourTuple, RTSPSessionInfo], frame_number: int
-    ) -> Optional[FourTuple]:
-        assert rtsp_sessions
-        rtsp_sessions_by_frame_num = sorted(
-            [
-                (four_tuple, session_info)
-                for four_tuple, session_info in rtsp_sessions.items()
-            ],
-            key=lambda x: x[1].first_frame_number,
-        )
-        closest_rtsp_session_four_tuple = None
-        for four_tuple, rtsp_session in rtsp_sessions_by_frame_num:
-            session_frame_number = rtsp_session.first_frame_number
-            if frame_number < session_frame_number:
-                break
+                if transport.protocol == "rtp/avp/tcp":
+                    # RTP packets will be sent on the same tcp session as the RTSP
+                    if rtsp_five_tuple == five_tuple:
+                        return rtsp_five_tuple, i
+                else:
+                    assert (
+                        "client_port" in transport.options
+                        and "server_port" in transport.options
+                    )
+                    client_port = cls._parse_transport_port(
+                        transport.options["client_port"]
+                    )
+                    server_port = cls._parse_transport_port(
+                        transport.options["server_port"]
+                    )
+                    transport_tuple = FiveTuple(
+                        src_ip=five_tuple.src_ip,
+                        dst_ip=five_tuple.dst_ip,
+                        src_port=server_port,
+                        dst_port=client_port,
+                        proto=IPProto.UDP,
+                    )
+                    if transport_tuple == five_tuple:
+                        return rtsp_five_tuple, i
 
-            closest_rtsp_session_four_tuple = four_tuple
+        return None, -1
 
-        if closest_rtsp_session_four_tuple is not None:
-            return closest_rtsp_session_four_tuple
+    @staticmethod
+    def _parse_transport_port(port_range: str) -> int:
+        port_str, _ = port_range.split("-", 1)
+        return int(port_str)
 
-        self.logger.debug(
-            "Could not find SDP before the start of the RTP stream, using SDP file found after the stream"
-        )
-        for four_tuple, rtsp_session in reversed(rtsp_sessions_by_frame_num):
-            session_frame_number = rtsp_session.first_frame_number
-            if frame_number > session_frame_number:
-                break
-
-            closest_rtsp_session_four_tuple = four_tuple
-
-        if closest_rtsp_session_four_tuple is None:
-            self.logger.warning(
-                "This should be impossible, choosing first RTSP session"
-            )
-            closest_rtsp_session_four_tuple = list(rtsp_sessions.keys())[0]
-
-        return closest_rtsp_session_four_tuple
-
-    def _get_sdp_media_for_rtp_stream(
-        self, sdp: dict, stream_info: RTPStreamInfo
-    ) -> Optional[dict]:
-        payload_type = stream_info.payload_type
+    @staticmethod
+    def _get_sdp_media_for_rtp_stream(sdp: dict, payload_type: int) -> Optional[dict]:
         for sdp_media in get_sdp_medias(sdp):
             if get_payload_type_from_sdp_media(sdp_media) == payload_type:
                 return sdp_media
-
-    @staticmethod
-    def _get_tcp_four_tuple(packet: Packet) -> FourTuple:
-        assert "IP" in packet and "TCP" in packet
-        return FourTuple.create(
-            src_ip=str(packet["IP"].src),
-            dst_ip=str(packet["IP"].dst),
-            src_port=int(packet["TCP"].srcport),
-            dst_port=int(packet["TCP"].dstport),
-        )

@@ -8,7 +8,7 @@ from av.container import Container
 from rtsp_decoder.rtsp import RTSPDataExtractor
 from rtsp_decoder.rtp import RTPDecoder
 
-from typing import Optional
+from typing import Optional, Dict
 
 
 @contextmanager
@@ -81,27 +81,24 @@ class RTSPDecoder:
 
     def run(self) -> int:
         """Run the decoder. Returns an error code."""
-        rtsp_data = RTSPDataExtractor(self.input_path, self.sdp)
-        if not rtsp_data.streams:
-            self.logger.error("Could not extract data from capture; exiting")
-            return 1
 
-        self.logger.info(f"Found {len(rtsp_data.streams)} RTP streams")
+        # The new pipeline idea
+        rtp_decoders: Dict[int, RTPDecoder] = {}
+        rtsp_extractor = RTSPDataExtractor(self.input_path, self.sdp)
 
-        stream_num = 0
-        for ssrc, stream_info in rtsp_data.streams.items():
-            output_filename = f"{self.output_prefix}{stream_num}.mp4"
-            output_path = os.path.join(self.output_dir, output_filename)
-            self.logger.info(
-                f"Processing stream {stream_num}, saving to `{output_path}`"
-            )
-
-            try:
-                with GetContainer(output_path) as container:
-                    rtp_decoder = RTPDecoder(ssrc, stream_info, self.fast)
-                    rtp_decoder.decode_stream(self.input_path, container)
-            except Exception as e:
-                self.logger.error(f"{e}, skipping")
-
-            stream_num += 1
-        return 0
+        try:
+            for task in rtsp_extractor.process_next():
+                # if task.ttype == TaskType.CREATE_DECODER:
+                #     output_filename = f"{self.output_prefix}{task.body.ident}.mp4"
+                #     output_path = os.path.join(self.output_dir, output_filename)
+                #     rtp_decoder = RTPDecoder(
+                #         output_path, task.body.sdp_media, self.fast
+                #     )
+                #     rtp_decoders[task.body.ident] = rtp_decoder
+                # elif task.ttype == TaskType.PROCESS_RTP_PACKET:
+                #     rtp_decoder = rtp_decoders[task.body.ident]
+                #     rtp_decoder.process_rtp_packet(task.body.rtp_packet)
+                ...
+        finally:
+            if not rtp_decoders:
+                self.logger.warning("No RTSP streams found")
