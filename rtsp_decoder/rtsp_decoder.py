@@ -92,6 +92,6 @@ class RTSPDecoder:
                     rtp_decoder.process_rtp_packet(task.body.rtp_packet)
         except Exception:
             raise
-        # finally:
-        #     if not rtp_decoders:
-        #         self.logger.warning("No RTSP streams found")
+        finally:
+            if not rtp_decoders:
+                self.logger.warning("No RTSP streams found")
