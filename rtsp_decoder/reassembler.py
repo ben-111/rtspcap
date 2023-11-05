@@ -1,6 +1,6 @@
 import logging
 
-from typing import TypeVar, Generic, Dict, Optional, List, Iterator
+from typing import TypeVar, Generic, Dict, Optional, List, Iterator, Tuple
 
 T = TypeVar("T")
 
@@ -16,13 +16,13 @@ class Reassembler(Generic[T]):
         self._max_out_of_order = max_out_of_order
         self._out_of_order_packets: Dict[int, T] = {}
         self._expected_seq: Optional[int] = None
-        self._output_queue: List[Optional[T]] = []
+        self._output_queue: List[Tuple[Optional[T], bool]] = []
         self._done: bool = False
 
-    def get_output_packets(self) -> Iterator[Optional[T]]:
+    def get_output_packets(self) -> Iterator[Tuple[Optional[T], bool]]:
         while self._output_queue:
-            packet = self._output_queue.pop(0)
-            yield packet
+            packet_and_skipped = self._output_queue.pop(0)
+            yield packet_and_skipped
 
     def _increment_expected_seq(self) -> None:
         self._expected_seq += 1
@@ -45,13 +45,18 @@ class Reassembler(Generic[T]):
             self._done = True
             while self._out_of_order_packets:
                 earliest_packet_seq = min(self._out_of_order_packets.keys())
+                skipped = earliest_packet_seq != self._expected_seq
                 self.logger.debug(
                     f"Out of order packet with seq {earliest_packet_seq} found after the end of the packets; Appending to the end"
                 )
                 packet = self._out_of_order_packets.pop(earliest_packet_seq)
-                self._output_queue.append(packet)
+                self._output_queue.append((packet, skipped))
+                if skipped:
+                    self._expected_seq = earliest_packet_seq
 
-            self._output_queue.append(None)
+                self._increment_expected_seq()
+
+            self._output_queue.append((None, False))
             return
 
         # If an out-of-order packet was given, save it to the side until max_out_of_order
@@ -66,13 +71,17 @@ class Reassembler(Generic[T]):
             )
             if self._out_of_order_packets:
                 self._expected_seq = min(self._out_of_order_packets.keys())
+                self._output_queue.append(
+                    (self._out_of_order_packets.pop(self._expected_seq), True)
+                )
                 while True:
-                    self._output_queue.append(
-                        self._out_of_order_packets.pop(self._expected_seq)
-                    )
                     self._increment_expected_seq()
                     if self._expected_seq not in self._out_of_order_packets:
                         break
+
+                    self._output_queue.append(
+                        (self._out_of_order_packets.pop(self._expected_seq), False)
+                    )
 
             else:
                 self._increment_expected_seq()
@@ -80,5 +89,5 @@ class Reassembler(Generic[T]):
             return
 
         # Else, put the packet in the output queue
-        self._output_queue.append(packet)
+        self._output_queue.append((packet, False))
         self._increment_expected_seq()

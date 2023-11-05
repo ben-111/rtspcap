@@ -43,7 +43,7 @@ class RTPDecoder:
             return
 
         self._reassembler.process(None)
-        for out_packet in self._reassembler.get_output_packets():
+        for out_packet, skipped in self._reassembler.get_output_packets():
             self._handle_packet(out_packet)
             if out_packet is None:
                 break
@@ -56,7 +56,7 @@ class RTPDecoder:
             return
 
         self._reassembler.process(rtp_packet, rtp_packet.seq)
-        for out_packet in self._reassembler.get_output_packets():
+        for out_packet, skipped in self._reassembler.get_output_packets():
             self._handle_packet(out_packet)
 
     def _handle_packet(
