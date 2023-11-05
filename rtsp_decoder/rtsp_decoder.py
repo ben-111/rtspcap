@@ -57,6 +57,7 @@ class RTSPDecoder:
             output_dir, _ = os.path.splitext(output_dir)
 
         if not os.path.exists(output_dir):
+            self.logger.info(f"Directory {output_dir} does not exist, creating it")
             os.mkdir(output_dir)
 
         if not os.path.isdir(output_dir):
@@ -83,6 +84,7 @@ class RTSPDecoder:
                 if task.ttype == TaskType.CREATE_DECODER:
                     output_filename = f"{self.output_prefix}{task.body.ident}.mp4"
                     output_path = os.path.join(self.output_dir, output_filename)
+                    self.logger.info(f"Found RTP stream, saving to `{output_path}`")
                     rtp_decoder = RTPDecoder(
                         output_path, task.body.sdp_media, self.fast
                     )
