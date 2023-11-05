@@ -9,7 +9,16 @@ from rtsp_decoder.rtsp import RTSPDataExtractor
 from rtsp_decoder.rtp import RTPDecoder
 from rtsp_decoder.task import TaskType
 
-from typing import Optional, Dict
+from typing import Optional, Dict, Iterable
+
+
+@contextmanager
+def CloseAllDictValues(closables: Dict):
+    try:
+        yield
+    finally:
+        for closable in closables.values():
+            closable.close()
 
 
 class RTSPDecoder:
@@ -74,12 +83,10 @@ class RTSPDecoder:
 
     def run(self) -> None:
         """Run the decoder. Returns an error code."""
-
-        # The new pipeline idea
         rtp_decoders: Dict[int, RTPDecoder] = {}
         rtsp_extractor = RTSPDataExtractor(self.input_path, self.sdp)
 
-        try:
+        with CloseAllDictValues(rtp_decoders):
             for task in rtsp_extractor.process_next():
                 if task.ttype == TaskType.CREATE_DECODER:
                     output_filename = f"{self.output_prefix}{task.body.ident}.mp4"
@@ -92,8 +99,6 @@ class RTSPDecoder:
                 elif task.ttype == TaskType.PROCESS_RTP_PACKET:
                     rtp_decoder = rtp_decoders[task.body.ident]
                     rtp_decoder.process_rtp_packet(task.body.rtp_packet)
-        except Exception:
-            raise
-        finally:
+
             if not rtp_decoders:
                 self.logger.warning("No RTSP streams found")
