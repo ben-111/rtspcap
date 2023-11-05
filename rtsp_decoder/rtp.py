@@ -9,7 +9,7 @@ from pyshark import FileCapture
 from pyshark.packet.packet import Packet
 
 from rtsp_decoder.sdp import get_codec_name_from_sdp_media
-from rtsp_decoder.task import RTPPacket
+from rtsp_decoder.rtp_packet import RTPPacket
 
 from rtsp_decoder.codecs.rtp_codec import RTPCodec
 

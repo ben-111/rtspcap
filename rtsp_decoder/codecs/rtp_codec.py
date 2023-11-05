@@ -3,7 +3,7 @@ import logging
 from av.packet import Packet as AVPacket
 from av.frame import Frame
 
-from rtsp_decoder.task import RTPPacket
+from rtsp_decoder.rtp_packet import RTPPacket
 
 from rtsp_decoder.codecs.codec_base import CodecBase
 from rtsp_decoder.codecs.h264 import CodecH264

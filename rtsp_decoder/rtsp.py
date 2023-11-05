@@ -11,8 +11,8 @@ from rtsp_decoder.task import (
     TaskType,
     CreateDecoderTaskBody,
     ProcessRTPPacketTaskBody,
-    RTPPacket,
 )
+from rtsp_decoder.rtp_packet import RTPPacket
 
 from typing import NamedTuple, Dict, Tuple, List, Optional, Iterator
 
