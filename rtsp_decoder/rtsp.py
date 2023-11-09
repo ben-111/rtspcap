@@ -3,8 +3,18 @@ from dataclasses import dataclass, field
 
 from pyshark import FileCapture
 from pyshark.packet.packet import Packet
+
+from dpkt.pcap import UniversalReader
+from dpkt.ethernet import Ethernet
+from dpkt.ip import IP
+from dpkt.tcp import TCP, TH_FIN, TH_URG
+from dpkt.udp import UDP
+from dpkt.rtp import RTP
+from dpkt.utils import inet_to_str
+
 import sdp_transform
 
+from rtsp_decoder.rtsp_session import RTSPSession, RTSPSessionState, RTSP_PORTS
 from rtsp_decoder.sdp import get_sdp_medias, get_payload_type_from_sdp_media
 from rtsp_decoder.task import (
     Task,
@@ -17,22 +27,6 @@ from rtsp_decoder.rtp_packet import RTPPacket
 from typing import NamedTuple, Dict, Tuple, List, Optional, Iterator
 
 import logging
-
-
-class RTSPTransportHeader(NamedTuple):
-    protocol: str
-    options: Dict[str, str]
-
-    @classmethod
-    def parse(cls, header_str: str) -> "RTSPTransportHeader":
-        transport_header_values = header_str.split(";")
-        protocol = transport_header_values[0].casefold()
-        options = dict()
-        for option in transport_header_values[1:]:
-            key, value = option.split("=", 1) if "=" in option else (option, None)
-            options[key.casefold()] = value
-
-        return cls(protocol=protocol, options=options)
 
 
 class IPProto(Enum):
@@ -74,11 +68,23 @@ class FiveTuple(NamedTuple):
             proto=proto,
         )
 
+    @classmethod
+    def from_dpkt(cls, ip_layer: IP) -> "FiveTuple":
+        assert isinstance(ip_layer.data, TCP) or isinstance(ip_layer.data, UDP)
 
-@dataclass
-class RTSPSessionInfo:
-    sdp: Optional[dict] = None
-    transport_headers: List[RTSPTransportHeader] = field(default_factory=list)
+        transport_layer = ip_layer.data
+        if isinstance(ip_layer.data, TCP):
+            proto = IPProto.TCP
+        else:
+            proto = IPProto.UDP
+
+        return cls(
+            src_ip=inet_to_str(ip_layer.src),
+            dst_ip=inet_to_str(ip_layer.dst),
+            src_port=transport_layer.sport,
+            dst_port=transport_layer.dport,
+            proto=proto,
+        )
 
 
 class RTSPDataExtractor:
@@ -92,11 +98,55 @@ class RTSPDataExtractor:
         self._backup_sdp: Optional[str] = backup_sdp
         self._current_ident: int = 0
 
+    def is_rtsp(self, ip_layer: IP) -> bool:
+        if not isinstance(ip_layer.data, TCP):
+            return False
+
+        tcp_layer = ip_layer.data
+        if tcp_layer.sport not in RTSP_PORTS or tcp_layer.dport not in RTSP_PORTS:
+            return False
+
+        return True
+
     def process_next(self) -> Iterator[Task]:
         ssrc_to_ident: Dict[int, int] = {}
-        rtsp_sessions: Dict[FiveTuple, RTSPSessionInfo] = {}
+        rtsp_sessions: Dict[FiveTuple, RTSPSession] = {}
         invalid_ssrcs: List[int] = []
 
+        with open(self._pcap_path, "rb") as f:
+            capture = UniversalReader(f)
+            timestamp: float
+            buf: bytes
+            for timestamp, buf in capture:
+                # Assume layer 2 is Ethernet
+                eth_layer = Ethernet(buf)
+
+                if not isinstance(eth_layer.data, IP):
+                    continue
+
+                ip_layer = eth_layer.data
+                if isinstance(ip_layer.data, TCP):
+                    five_tuple = FiveTuple.from_dpkt(ip_layer)
+                    tcp = ip_layer.data
+
+                    if five_tuple not in rtsp_sessions:
+                        rtsp_sessions[five_tuple] = RTSPSession()
+
+                    rtsp_session = rtsp_sessions[five_tuple]
+                    rtsp_session.process_packet(tcp)
+                    if rtsp_session.state == RTSPSessionState.DONE:
+                        self._handle_rtsp_session(rtsp_session)
+
+                elif isinstance(ip_layer.data, UDP):
+                    ...
+                else:
+                    continue
+
+            for rtsp_session in rtsp_sessions.values():
+                rtsp_session.process_packet(None)
+                self._handle_rtsp_session(rtsp_session)
+
+        return
         # We disable sdp so we can access the SDP data directly
         with FileCapture(
             self._pcap_path,
@@ -212,6 +262,9 @@ class RTSPDataExtractor:
                             transport_header
                         )
 
+    def _handle_rtsp_session(self, rtsp_session: RTSPSession) -> None:
+        ...
+
     def _get_next_ident(self) -> int:
         ident = self._current_ident
         self._current_ident += 1
@@ -222,7 +275,7 @@ class RTSPDataExtractor:
         cls,
         ssrc: int,
         five_tuple: FiveTuple,
-        rtsp_sessions: Dict[FiveTuple, RTSPSessionInfo],
+        rtsp_sessions: Dict[FiveTuple, RTSPSession],
     ) -> Tuple[Optional[FiveTuple], int]:
         """
         Associate an RTP stream with an RTSP stream using the transport headers in

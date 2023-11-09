@@ -34,7 +34,7 @@ class RTPDecoder:
 
         self.logger.info(f"Decoding stream with codec: {self._stream_codec.codec_name}")
         self._reassembler = Reassembler[RTPPacket](
-            self.RTP_SEQ_BIT_SIZE, self.MAX_OUT_OF_ORDER_PACKETS
+            self.RTP_SEQ_BIT_SIZE, self.MAX_OUT_OF_ORDER_PACKETS, "packet"
         )
         self._container: Container = av.open(output_path, format="mp4", mode="w")
 
