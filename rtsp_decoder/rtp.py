@@ -24,6 +24,7 @@ class RTPDecoder:
         self._fast = fast
         self._frame_buffer: List[Frame] = []
         self._out_stream: Optional[Stream] = None
+        self._use_default_settings: bool = False
 
         codec_name = get_codec_name_from_sdp_media(sdp_media)
         self._stream_codec = RTPCodec(codec_name, sdp_media, self._fast)
@@ -72,26 +73,35 @@ class RTPDecoder:
 
             if self._out_stream is None:
                 if not self._stream_codec.ready:
-                    if len(self._frame_buffer) >= self.FRAME_BUFFER_SIZE:
-                        raise ValueError("Frame buffer is full, soemthing went wrong")
-
                     self._frame_buffer += frames
-                    continue
+                    if len(self._frame_buffer) >= self.FRAME_BUFFER_SIZE:
+                        self.logger.info("Frame buffer is full, using default settings")
+                        self._use_default_settings = True
+                    else:
+                        continue
 
                 self._out_stream = self._container.add_stream(
                     self._stream_codec.av_codec_name
                 )
-                if self._stream_codec.codec_type == "video":
-                    self._out_stream.codec_context.width = self._stream_codec.width
-                    self._out_stream.codec_context.height = self._stream_codec.height
-                    if 1 < self._stream_codec.rate < 120:
-                        self._out_stream.codec_context.rate = self._stream_codec.rate
-                    else:
-                        self.logger.warning("Setting frame rate to 30 FPS")
-                        self._out_stream.codec_context.rate = 30
+                if not self._use_default_settings:
+                    if self._stream_codec.codec_type == "video":
+                        self._out_stream.codec_context.width = self._stream_codec.width
+                        self._out_stream.codec_context.height = (
+                            self._stream_codec.height
+                        )
+                        if (
+                            self._stream_codec.rate
+                            and 1 < self._stream_codec.rate < 120
+                        ):
+                            self._out_stream.codec_context.rate = (
+                                self._stream_codec.rate
+                            )
+                        else:
+                            self.logger.warning("Setting frame rate to 30 FPS")
+                            self._out_stream.codec_context.rate = 30
 
-                elif self._stream_codec.codec_type == "audio":
-                    self._out_stream.codec_context.rate = self._stream_codec.rate
+                    elif self._stream_codec.codec_type == "audio":
+                        self._out_stream.codec_context.rate = self._stream_codec.rate
 
                 if self._fast:
                     self._out_stream.thread_type = "AUTO"
