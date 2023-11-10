@@ -104,5 +104,8 @@ class RTPDecoder:
                 self._container.mux(encoded_packets)
 
     def _flush_encoder(self) -> None:
+        if self._out_stream is None:
+            return
+
         out_packets = self._out_stream.encode(None)
         self._container.mux(out_packets)
