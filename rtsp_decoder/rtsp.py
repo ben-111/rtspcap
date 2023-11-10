@@ -109,9 +109,7 @@ class RTSPDataExtractor:
         return True
 
     def process_next(self) -> Iterator[Task]:
-        ssrc_to_ident: Dict[int, int] = {}
         rtsp_sessions: Dict[FiveTuple, RTSPSession] = {}
-        invalid_ssrcs: List[int] = []
 
         with open(self._pcap_path, "rb") as f:
             capture = UniversalReader(f)
@@ -150,25 +148,24 @@ class RTSPDataExtractor:
         # We disable sdp so we can access the SDP data directly
         with FileCapture(
             self._pcap_path,
-            display_filter=f"(rtsp.request or rtsp.response) or (rtp.ssrc and rtp.p_type != 0)",
+            display_filter=f"(rtsp.request or rtsp.response) or (rtp.p_type != 0)",
             disable_protocol="sdp",
         ) as capture:
             for packet in capture:
                 if (
                     "RTP" in packet
-                    and packet["RTP"].has_field("ssrc")
                     and packet["RTP"].has_field("p_type")
                     and packet["RTP"].has_field("payload")
                 ):
                     rtp_layer = packet["RTP"]
-                    ssrc = int(rtp_layer.ssrc, 16)
+                    five_tuple = FiveTuple.from_pyshark(packet)
 
-                    if ssrc in invalid_ssrcs:
+                    if five_tuple in invalid_five_tuples:
                         continue
 
                     payload_type = int(rtp_layer.p_type)
                     try:
-                        ident = ssrc_to_ident[ssrc]
+                        ident = five_tuple_to_ident[five_tuple]
                         rtp_packet = RTPPacket.from_pyshark(packet)
                         process_rtp_packet = ProcessRTPPacketTaskBody(
                             ident=ident, rtp_packet=rtp_packet
@@ -179,7 +176,7 @@ class RTSPDataExtractor:
                         yield task
                     except KeyError:
                         rtsp_five_tuple, th_index = self._find_rtsp_stream(
-                            ssrc, FiveTuple.from_pyshark(packet), rtsp_sessions
+                            five_tuple, rtsp_sessions
                         )
                         if rtsp_five_tuple is None:
                             self.logger.error(
@@ -190,13 +187,13 @@ class RTSPDataExtractor:
                         if rtsp_sessions[rtsp_five_tuple].sdp is None:
                             if self._backup_sdp is None:
                                 self.logger.error(
-                                    f"Could not find SDP of RTP stream with ssrc {ssrc}, discarding stream"
+                                    f"Could not find SDP of RTP stream with five tuple {five_tuple}, discarding stream"
                                 )
-                                invalid_ssrcs.append(ssrc)
+                                invalid_five_tuples.append(five_tuple)
                                 continue
 
                             self.logger.warning(
-                                f"Could not find SDP of RTP stream with ssrc {ssrc}, using backup SDP"
+                                f"Could not find SDP of RTP stream with five tuple {five_tuple}, using backup SDP"
                             )
                             rtsp_sessions[rtsp_five_tuple].sdp = self._backup_sdp
 
@@ -213,7 +210,7 @@ class RTSPDataExtractor:
                             self.logger.error(
                                 "Could not find SDP media of RTP stream in SDP, discarding stream"
                             )
-                            invalid_ssrcs.append(ssrc)
+                            invalid_five_tuples.append(five_tuple)
                             continue
 
                         ident = self._get_next_ident()
@@ -224,7 +221,7 @@ class RTSPDataExtractor:
                             ttype=TaskType.CREATE_DECODER, body=create_decoder
                         )
                         yield create_task
-                        ssrc_to_ident[ssrc] = ident
+                        five_tuple_to_ident[five_tuple] = ident
 
                         rtp_packet = RTPPacket.from_pyshark(packet)
                         process_rtp_packet = ProcessRTPPacketTaskBody(
@@ -273,7 +270,6 @@ class RTSPDataExtractor:
     @classmethod
     def _find_rtsp_stream(
         cls,
-        ssrc: int,
         five_tuple: FiveTuple,
         rtsp_sessions: Dict[FiveTuple, RTSPSession],
     ) -> Tuple[Optional[FiveTuple], int]:
@@ -283,12 +279,6 @@ class RTSPDataExtractor:
         """
         for rtsp_five_tuple, rtsp_session in rtsp_sessions.items():
             for i, transport in enumerate(rtsp_session.transport_headers):
-                if (
-                    "ssrc" in transport.options
-                    and int(transport.options["ssrc"], 16) == ssrc
-                ):
-                    return rtsp_five_tuple, i
-
                 if transport.protocol == "rtp/avp/tcp":
                     # RTP packets will be sent on the same tcp session as the RTSP
                     if rtsp_five_tuple == five_tuple:

@@ -37,8 +37,8 @@ class CodecBase(ABC):
             fmtp_data = sdp_media["fmtp"][0]
             if "config" in fmtp_data:
                 config = fmtp_data["config"]
-                parameters = config.split("; ")
+                parameters = config.split(";")
                 for parameter in parameters:
                     key, value = parameter.split("=", 1)
-                    fmtp_config[key.casefold()] = value
+                    fmtp_config[key.strip().casefold()] = value
         return fmtp_config

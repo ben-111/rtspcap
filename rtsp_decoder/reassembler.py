@@ -74,7 +74,9 @@ class Reassembler(Generic[T]):
         # If an out-of-order packet was given, save it to the side until max_out_of_order
         # packets are reached. Then, rebase the expected seq and dump all applicable packets
         if seq != self._expected_seq:
-            self._out_of_order_packets[seq] = packet
+            if seq > self._expected_seq:
+                self._out_of_order_packets[seq] = packet
+
             if len(self._out_of_order_packets) < self._max_out_of_order:
                 return
 
