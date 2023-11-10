@@ -1,7 +1,9 @@
 from enum import Enum
 import logging
 
+from dpkt.ip import IP
 from dpkt.tcp import TCP, TH_URG, TH_FIN
+from dpkt.utils import inet_to_str
 from dpkt.dpkt import UnpackError, NeedData
 
 import sdp_transform
@@ -44,8 +46,10 @@ class RTSPSession:
 
     def __init__(self):
         self.logger = logging.getLogger(__name__)
+        self.server_ip: Optional[str] = None
+        self.client_ip: Optional[str] = None
         self.sdp: Optional[dict] = None
-        self._transport_headers: List[RTSPTransportHeader] = []
+        self.transport_headers: List[RTSPTransportHeader] = []
         self._reassembler = Reassembler[bytes](
             TCP_SEQ_SIZE_IN_BITS, self.MAX_OUT_OF_ORDER, "data"
         )
@@ -56,9 +60,7 @@ class RTSPSession:
     def state(self) -> RTSPSessionState:
         return self._state
 
-    def process_packet(self, tcp_layer: Optional[TCP]) -> None:
-        # We care only about the packets from the server
-        # Assume direction from the port
+    def process_packet(self, ip_layer: Optional[IP]) -> None:
         if self.state == RTSPSessionState.INVALID:
             self.logger.error("Invalid State")
             return
@@ -67,14 +69,26 @@ class RTSPSession:
             self.logger.error("Already done")
             return
 
-        if tcp_layer is None:
+        if ip_layer is None:
             self._reassembler.process(None)
             self._process_out_packets()
             self._state = RTSPSessionState.DONE
             return
 
-        if tcp_layer.sport not in RTSP_PORTS or tcp_layer.dport in RTSP_PORTS:
+        if not isinstance(ip_layer.data, TCP):
+            self.logger.error("Unexpected protocol")
             return
+
+        tcp_layer = ip_layer.data
+
+        # We care only about the packets from the server
+        if tcp_layer.sport not in RTSP_PORTS:
+            self.logger.error("Unexpected port")
+            return
+
+        if self.client_ip is None and self.server_ip is None:
+            self.server_ip = inet_to_str(ip_layer.src)
+            self.client_ip = inet_to_str(ip_layer.dst)
 
         if tcp_layer.flags & TH_FIN:
             self._reassembler.process(None)
@@ -131,6 +145,6 @@ class RTSPSession:
 
         # SETUP response
         elif "transport" in rtsp_response.headers and int(rtsp_response.status) == 200:
-            self._transport_headers.append(
+            self.transport_headers.append(
                 RTSPTransportHeader.parse(rtsp_response.headers["transport"])
             )
