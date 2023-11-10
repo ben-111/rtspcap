@@ -92,11 +92,19 @@ class RTSPDecoder:
                     output_filename = f"{self.output_prefix}{task.body.ident}.mp4"
                     output_path = os.path.join(self.output_dir, output_filename)
                     self.logger.info(f"Found RTP stream, saving to `{output_path}`")
-                    rtp_decoder = RTPDecoder(
-                        output_path, task.body.sdp_media, self.fast
-                    )
+                    try:
+                        rtp_decoder = RTPDecoder(
+                            output_path, task.body.sdp_media, self.fast
+                        )
+                    except Exception as e:
+                        self.logger.error(e)
+                        continue
+
                     rtp_decoders[task.body.ident] = rtp_decoder
                 elif task.ttype == TaskType.PROCESS_RTP_PACKET:
+                    if task.body.ident not in rtp_decoders:
+                        continue
+
                     rtp_decoder = rtp_decoders[task.body.ident]
                     rtp_decoder.process_rtp_packet(task.body.rtp_packet)
 
