@@ -29,7 +29,7 @@ from rtsp_decoder.task import (
 )
 from rtsp_decoder.rtp_packet import RTPPacket
 
-from typing import NamedTuple, Dict, Tuple, List, Optional, Iterator
+from typing import NamedTuple, Dict, Tuple, List, Optional, Iterator, Set
 
 import logging
 
@@ -108,10 +108,11 @@ class RTSPDataExtractor:
         self._rtp_id_to_ident: Dict[RTPID, int] = {}
         self._rtp_over_tcp_sessions: Dict[FiveTuple, RTSPSession] = {}
         self._rtp_over_udp_sessions: Dict[FiveTuple, RTSPSession] = {}
+        self._invalid_five_tuples: Set[FiveTuple] = set()
+        self._done_rtsp_five_tuples: Set[FiveTuple] = set()
 
     def process_next(self) -> Iterator[Task]:
         rtsp_sessions: Dict[FiveTuple, RTSPSession] = {}
-        invalid_five_tuples: List[FiveTuple] = []
 
         with open(self._pcap_path, "rb") as f:
             capture = UniversalReader(f)
@@ -135,6 +136,9 @@ class RTSPDataExtractor:
                 if five_tuple in self._rtp_over_tcp_sessions:
                     rtsp_session = self._rtp_over_tcp_sessions[five_tuple]
                     yield from self._process_rtp_over_tcp(five_tuple, rtsp_session)
+                    continue
+
+                if five_tuple in self._done_rtsp_five_tuples:
                     continue
 
                 if five_tuple not in rtsp_sessions:
@@ -170,13 +174,19 @@ class RTSPDataExtractor:
                     continue
 
                 five_tuple = FiveTuple.from_dpkt(ip_layer)
-                if five_tuple in invalid_five_tuples:
+                if five_tuple in self._invalid_five_tuples:
                     continue
 
                 if five_tuple not in self._rtp_over_udp_sessions:
                     continue
 
                 rtsp_session = self._rtp_over_udp_sessions[five_tuple]
+                if (
+                    inet_to_str(ip_layer.src) != rtsp_session.server_ip
+                    or inet_to_str(ip_layer.dst) != rtsp_session.client_ip
+                ):
+                    continue
+
                 udp_layer = ip_layer.data
 
                 try:
@@ -201,9 +211,7 @@ class RTSPDataExtractor:
         # For each track, transport is either UDP or TCP.
         # We handle each transport header and then delete it and the RTSP Session too
         # if we can.
-        for th_index, transport_header in enumerate(
-            rtsp_session.transport_headers.copy()
-        ):
+        for transport_header in rtsp_session.transport_headers:
             transport_header: RTSPTransportHeader
             try:
                 # If it is TCP, we need to mark this RTSP session as one that we
@@ -251,8 +259,9 @@ class RTSPDataExtractor:
                     )
             except Exception as e:
                 self.logger.error(f"Invalid transport header: {e}")
-            finally:
-                rtsp_session.transport_headers.pop(th_index)
+
+        rtsp_session.transport_headers.clear()
+        self._done_rtsp_five_tuples.add(five_tuple)
 
     def _process_rtp_over_tcp(
         self,
@@ -277,8 +286,8 @@ class RTSPDataExtractor:
                 self.logger.error(
                     "Could not find SDP media of RTP stream in SDP, discarding stream"
                 )
-                invalid_five_tuples.append(five_tuple)
-                continue
+                self._invalid_five_tuples.add(five_tuple)
+                return
 
             ident = self._get_next_ident()
             create_decoder = CreateDecoderTaskBody(ident=ident, sdp_media=sdp_media)

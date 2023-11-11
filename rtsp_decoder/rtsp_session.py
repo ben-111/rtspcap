@@ -72,6 +72,9 @@ class RTSPSession:
         return self._state
 
     def process_packet(self, ip_layer: Optional[IP]) -> None:
+        if self.state == RTSPSessionState.DONE:
+            return
+
         if self.state != RTSPSessionState.PROCESSING_RTSP:
             self.logger.error("Invalid State")
             return
@@ -124,7 +127,7 @@ class RTSPSession:
                     self.transport_headers
                 ):
                     self._state = RTSPSessionState.DONE
-                    return
+                    return  # We could be discarding packets here
 
                 self.logger.warning("Lost an RTSP packet; Trying to recover")
                 self._buffer = b""
@@ -205,7 +208,10 @@ class RTSPSession:
                 elif len(self._buffer[4:]) < length:
                     break
                 else:
-                    rtp_packet = RTPPacket.from_dpkt(RTP(self._buffer[4 : 4 + length]))
+                    if channel in self.data_channels:
+                        rtp_packet = RTPPacket.from_dpkt(
+                            RTP(self._buffer[4 : 4 + length])
+                        )
+                        yield rtp_packet
+
                     self._buffer = self._buffer[4 + length :]
-                    yield rtp_packet
-                    break
