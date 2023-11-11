@@ -1,4 +1,3 @@
 av
 dpkt==1.9.8
-pyshark
 sdp-transform

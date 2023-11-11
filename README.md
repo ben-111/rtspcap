@@ -1,8 +1,5 @@
 # RTSP Decoder
 
-Make sure that `tshark` is installed for `pyshark` to work.
-You might encounter problems if the `tshark` version is not recent enough.
-
 The decoder will try to extract all the RTP streams it finds, and will try to
 use the information it has to the fullest (best effort). If an SDP file is not
 found in the stream, you can provide one that might be close enough and work

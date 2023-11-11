@@ -1,9 +1,6 @@
 from enum import Enum
 from dataclasses import dataclass, field
 
-from pyshark import FileCapture
-from pyshark.packet.packet import Packet
-
 from dpkt.pcap import UniversalReader
 from dpkt.ethernet import Ethernet
 from dpkt.ip import IP
@@ -54,24 +51,6 @@ class FiveTuple(NamedTuple):
         peer2 = f"{self.dst_ip}:{self.dst_port}"
         hash_str = ",".join(sorted([peer1, peer2]))
         return hash((hash_str, self.proto))
-
-    @classmethod
-    def from_pyshark(cls, packet: Packet) -> "FiveTuple":
-        assert "IP" in packet and ("TCP" in packet or "UDP" in packet)
-        if "TCP" in packet:
-            proto = IPProto.TCP
-            transport_layer = packet["TCP"]
-        else:
-            proto = IPProto.UDP
-            transport_layer = packet["UDP"]
-
-        return cls(
-            src_ip=str(packet["IP"].src),
-            dst_ip=str(packet["IP"].dst),
-            src_port=int(transport_layer.srcport),
-            dst_port=int(transport_layer.dstport),
-            proto=proto,
-        )
 
     @classmethod
     def from_dpkt(cls, ip_layer: IP) -> "FiveTuple":
