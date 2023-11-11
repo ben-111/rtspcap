@@ -106,6 +106,7 @@ class RTSPDataExtractor:
             for packet in capture:
                 if (
                     "RTP" in packet
+                    and ("TCP" in packet or "UDP" in packet)
                     and packet["RTP"].has_field("p_type")
                     and packet["RTP"].has_field("payload")
                 ):
