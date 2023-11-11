@@ -106,18 +106,8 @@ class RTSPDataExtractor:
         self._backup_sdp: Optional[str] = backup_sdp
         self._current_ident: int = 0
         self._rtp_id_to_ident: Dict[RTPID, int] = {}
-        self._rtp_over_tcp_sessions: Dict[FiveTuple, Tuple[RTSPSession, List[int]]] = {}
+        self._rtp_over_tcp_sessions: Dict[FiveTuple, RTSPSession] = {}
         self._rtp_over_udp_sessions: Dict[FiveTuple, RTSPSession] = {}
-
-    def is_rtsp(self, ip_layer: IP) -> bool:
-        if not isinstance(ip_layer.data, TCP):
-            return False
-
-        tcp_layer = ip_layer.data
-        if tcp_layer.sport not in RTSP_PORTS or tcp_layer.dport not in RTSP_PORTS:
-            return False
-
-        return True
 
     def process_next(self) -> Iterator[Task]:
         rtsp_sessions: Dict[FiveTuple, RTSPSession] = {}
@@ -143,12 +133,8 @@ class RTSPDataExtractor:
 
                 five_tuple = FiveTuple.from_dpkt(ip_layer)
                 if five_tuple in self._rtp_over_tcp_sessions:
-                    rtsp_session, valid_channels = self._rtp_over_tcp_sessions[
-                        five_tuple
-                    ]
-                    yield from self._process_rtp_over_tcp(
-                        five_tuple, rtsp_session, valid_channels
-                    )
+                    rtsp_session = self._rtp_over_tcp_sessions[five_tuple]
+                    yield from self._process_rtp_over_tcp(five_tuple, rtsp_session)
                     continue
 
                 if five_tuple not in rtsp_sessions:
@@ -164,10 +150,7 @@ class RTSPDataExtractor:
                 rtsp_session.process_packet(None)
                 self._handle_rtsp_session(five_tuple, rtsp_session)
                 if five_tuple in self._rtp_over_tcp_sessions:
-                    _, valid_channels = self._rtp_over_tcp_sessions[five_tuple]
-                    yield from self._process_rtp_over_tcp(
-                        five_tuple, rtsp_session, valid_channels
-                    )
+                    yield from self._process_rtp_over_tcp(five_tuple, rtsp_session)
 
             # Reiterate over the capture to handle all the UDP streams.
             # The reason we need another iteration is so we don't miss
@@ -228,27 +211,30 @@ class RTSPDataExtractor:
                 # Once we actually get an RTP packet that is relevant, we can take the
                 # five tuple, SSRC and payload type and find the SDP media associated with it.
                 if transport_header.protocol == "rtp/avp/tcp":
-                    channel = self._parse_rtp_optional_range(
+                    data_channel, control_channel = self._parse_rtp_optional_range(
                         transport_header.options["interleaved"]
                     )
                     if five_tuple not in self._rtp_over_tcp_sessions:
-                        self._rtp_over_tcp_sessions[five_tuple] = (
-                            rtsp_session,
-                            [channel],
+                        self._rtp_over_tcp_sessions[five_tuple] = rtsp_session
+
+                    self._rtp_over_tcp_sessions[five_tuple].data_channels.append(
+                        data_channel
+                    )
+
+                    if control_channel is not None:
+                        self._rtp_over_tcp_sessions[five_tuple].control_channels.append(
+                            control_channel
                         )
-                    else:
-                        _, channels = self._rtp_over_tcp_sessions[five_tuple]
-                        channels.append(channel)
 
                 # If it is UDP, we need to start parsing that five tuple as RTP.
                 # Once we actually get an RTP over UDP packet, we can take the five tuple,
                 # SSRC and paylaod type and find the original RTSP session and SDP media
                 # associated with it.
                 elif transport_header.protocol in ("rtp/avp", "rtp/avp/udp"):
-                    client_port = self._parse_rtp_optional_range(
+                    client_port, _ = self._parse_rtp_optional_range(
                         transport_header.options["client_port"]
                     )
-                    server_port = self._parse_rtp_optional_range(
+                    server_port, _ = self._parse_rtp_optional_range(
                         transport_header.options["server_port"]
                     )
                     rtp_five_tuple = FiveTuple(
@@ -272,12 +258,8 @@ class RTSPDataExtractor:
         self,
         five_tuple: FiveTuple,
         rtsp_session: RTSPSession,
-        valid_channels: List[int],
     ) -> Iterator[Task]:
-        for channel, rtp_packet in rtsp_session.get_rtp():
-            if channel not in valid_channels:
-                continue
-
+        for rtp_packet in rtsp_session.get_rtp():
             yield from self._handle_rtp_packet(rtsp_session, five_tuple, rtp_packet)
 
     def _handle_rtp_packet(
@@ -311,60 +293,23 @@ class RTSPDataExtractor:
         yield process_task
 
     @staticmethod
-    def _parse_rtp_optional_range(optional_range_str: str) -> int:
-        first_num = optional_range_str
+    def _parse_rtp_optional_range(optional_range_str: str) -> Tuple[int, Optional[int]]:
+        first_num_str = optional_range_str
+        second_num_str = None
         if "-" in optional_range_str:
-            first_num, _ = optional_range_str.split("-", 1)
-        return int(first_num)
+            first_num_str, second_num_str = optional_range_str.split("-", 1)
+
+        first_num = int(first_num_str)
+        second_num = None
+        if second_num_str is not None:
+            second_num = int(second_num_str)
+
+        return first_num, second_num
 
     def _get_next_ident(self) -> int:
         ident = self._current_ident
         self._current_ident += 1
         return ident
-
-    @classmethod
-    def _find_rtsp_stream(
-        cls,
-        five_tuple: FiveTuple,
-        rtsp_sessions: Dict[FiveTuple, RTSPSession],
-    ) -> Tuple[Optional[FiveTuple], int]:
-        """
-        Associate an RTP stream with an RTSP stream using the transport headers in
-        the RTSP stream.
-        """
-        for rtsp_five_tuple, rtsp_session in rtsp_sessions.items():
-            for i, transport in enumerate(rtsp_session.transport_headers):
-                if transport.protocol == "rtp/avp/tcp":
-                    # RTP packets will be sent on the same tcp session as the RTSP
-                    if rtsp_five_tuple == five_tuple:
-                        return rtsp_five_tuple, i
-                else:
-                    assert (
-                        "client_port" in transport.options
-                        and "server_port" in transport.options
-                    )
-                    client_port = cls._parse_transport_port(
-                        transport.options["client_port"]
-                    )
-                    server_port = cls._parse_transport_port(
-                        transport.options["server_port"]
-                    )
-                    transport_tuple = FiveTuple(
-                        src_ip=five_tuple.src_ip,
-                        dst_ip=five_tuple.dst_ip,
-                        src_port=server_port,
-                        dst_port=client_port,
-                        proto=IPProto.UDP,
-                    )
-                    if transport_tuple == five_tuple:
-                        return rtsp_five_tuple, i
-
-        return None, -1
-
-    @staticmethod
-    def _parse_transport_port(port_range: str) -> int:
-        port_str, _ = port_range.split("-", 1)
-        return int(port_str)
 
     @staticmethod
     def _get_sdp_media_for_rtp_stream(sdp: dict, payload_type: int) -> Optional[dict]:
