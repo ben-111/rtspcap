@@ -5,6 +5,10 @@ from typing import TypeVar, Generic, Dict, Optional, List, Iterator, Tuple, Lite
 T = TypeVar("T")
 
 
+class EmptyQueueException(ValueError):
+    ...
+
+
 class Reassembler(Generic[T]):
     """
     This class is a generic best-effort reassembler.
@@ -30,6 +34,12 @@ class Reassembler(Generic[T]):
         while self._output_queue:
             packet_and_skipped = self._output_queue.pop(0)
             yield packet_and_skipped
+
+    def get_output_packet(self) -> Tuple[Optional[T], bool]:
+        if not self._output_queue:
+            raise EmptyQueueException("Output queue is empty")
+
+        return self._output_queue.pop(0)
 
     def _increment_expected_seq(self, packet: T) -> None:
         if self._mode == "packet":

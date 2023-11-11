@@ -9,7 +9,7 @@ from dpkt.dpkt import UnpackError, NeedData
 
 import sdp_transform
 
-from rtsp_decoder.reassembler import Reassembler
+from rtsp_decoder.reassembler import Reassembler, EmptyQueueException
 from rtsp_decoder.dpkt_helpers.rtsp import RTSPResponse
 from rtsp_decoder.sdp import get_sdp_medias
 from rtsp_decoder.rtp_packet import RTPPacket
@@ -72,13 +72,6 @@ class RTSPSession:
         return self._state
 
     def process_packet(self, ip_layer: Optional[IP]) -> None:
-        if self.state == RTSPSessionState.DONE:
-            return
-
-        if self.state != RTSPSessionState.PROCESSING_RTSP:
-            self.logger.error("Invalid State")
-            return
-
         if ip_layer is None:
             self._reassembler.process(None)
             self._process_out_packets()
@@ -119,7 +112,15 @@ class RTSPSession:
         self._process_out_packets()
 
     def _process_out_packets(self) -> None:
-        for out_packet, skipped in self._reassembler.get_output_packets():
+        while True:
+            if self.state != RTSPSessionState.PROCESSING_RTSP:
+                break
+
+            try:
+                out_packet, skipped = self._reassembler.get_output_packet()
+            except EmptyQueueException:
+                break
+
             if skipped:
                 # If we got the SDP and all the transport headers we can say
                 # that we're done
@@ -127,7 +128,7 @@ class RTSPSession:
                     self.transport_headers
                 ):
                     self._state = RTSPSessionState.DONE
-                    return  # We could be discarding packets here
+                    return
 
                 self.logger.warning("Lost an RTSP packet; Trying to recover")
                 self._buffer = b""
@@ -194,24 +195,33 @@ class RTSPSession:
 
                 if (
                     magic != INTERLEAVED_HEADER_MAGIC
-                    or channel not in self.control_channels
-                    or channel not in self.data_channels
+                    or (
+                        channel not in self.control_channels
+                        and channel not in self.data_channels
+                    )
                     or length < MIN_RTP_SIZE
                     or length > MAX_RTP_SIZE
                 ):
-                    next_magic_index = self._buffer[4:].find(INTERLEAVED_HEADER_MAGIC)
+                    next_magic_index = self._buffer[INTERLEAVED_HEADER_LEN:].find(
+                        INTERLEAVED_HEADER_MAGIC
+                    )
                     if next_magic_index < 0:
                         self._buffer = b""
                         break
 
                     self._buffer = self._buffer[next_magic_index:]
-                elif len(self._buffer[4:]) < length:
+                elif len(self._buffer[INTERLEAVED_HEADER_LEN:]) < length:
                     break
                 else:
                     if channel in self.data_channels:
                         rtp_packet = RTPPacket.from_dpkt(
-                            RTP(self._buffer[4 : 4 + length])
+                            RTP(
+                                self._buffer[
+                                    INTERLEAVED_HEADER_LEN : INTERLEAVED_HEADER_LEN
+                                    + length
+                                ]
+                            )
                         )
                         yield rtp_packet
 
-                    self._buffer = self._buffer[4 + length :]
+                    self._buffer = self._buffer[INTERLEAVED_HEADER_LEN + length :]

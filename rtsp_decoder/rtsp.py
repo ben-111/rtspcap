@@ -135,6 +135,7 @@ class RTSPDataExtractor:
                 five_tuple = FiveTuple.from_dpkt(ip_layer)
                 if five_tuple in self._rtp_over_tcp_sessions:
                     rtsp_session = self._rtp_over_tcp_sessions[five_tuple]
+                    rtsp_session.process_packet(ip_layer)
                     yield from self._process_rtp_over_tcp(five_tuple, rtsp_session)
                     continue
 
@@ -225,14 +226,10 @@ class RTSPDataExtractor:
                     if five_tuple not in self._rtp_over_tcp_sessions:
                         self._rtp_over_tcp_sessions[five_tuple] = rtsp_session
 
-                    self._rtp_over_tcp_sessions[five_tuple].data_channels.append(
-                        data_channel
-                    )
+                    rtsp_session.data_channels.append(data_channel)
 
                     if control_channel is not None:
-                        self._rtp_over_tcp_sessions[five_tuple].control_channels.append(
-                            control_channel
-                        )
+                        rtsp_session.control_channels.append(control_channel)
 
                 # If it is UDP, we need to start parsing that five tuple as RTP.
                 # Once we actually get an RTP over UDP packet, we can take the five tuple,
