@@ -151,13 +151,8 @@ class RTSPSession:
             self._buffer = b""
             return
 
-        # PLAY response
-        if "rtp-info" in rtsp_response.headers:
-            # Done or RTP data
-            self._state = RTSPSessionState.DONE
-
         # DESCRIBE response (SDP)
-        elif (
+        if (
             rtsp_response.body
             and int(rtsp_response.status) == 200
             and "content-type" in rtsp_response.headers
@@ -170,6 +165,10 @@ class RTSPSession:
             self.transport_headers.append(
                 RTSPTransportHeader.parse(rtsp_response.headers["transport"])
             )
+            if self.sdp is not None and len(get_sdp_medias(self.sdp)) == len(
+                self.transport_headers
+            ):
+                self._state = RTSPSessionState.DONE
 
     def get_rtp(self) -> Iterator[RTPPacket]:
         if self.state != RTSPSessionState.PROCESSING_RTP:
