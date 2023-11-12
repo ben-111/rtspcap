@@ -70,10 +70,9 @@ class RTSPDataExtractor:
     Find the first RTSP stream, and extract from it the stream name, the sdp and the tracks
     """
 
-    def __init__(self, pcap_path: str, backup_sdp: Optional[str] = None):
+    def __init__(self, pcap_path: str):
         self.logger = logging.getLogger(__name__)
         self._pcap_path: str = pcap_path
-        self._backup_sdp: Optional[str] = backup_sdp
         self._current_ident: int = 0
         self._rtp_id_to_ident: Dict[RTPID, int] = {}
         self._rtp_over_tcp_sessions: Dict[FiveTuple, RTSPSession] = {}

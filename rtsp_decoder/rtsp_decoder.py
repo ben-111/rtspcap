@@ -42,7 +42,6 @@ class RTSPDecoder:
         input_path: str,
         output_prefix: str = "stream",
         output_dir: Optional[str] = None,
-        sdp_path: Optional[str] = None,
         fast: bool = False,
         verbose: bool = False,
     ):
@@ -74,11 +73,6 @@ class RTSPDecoder:
 
         self.output_dir = output_dir
 
-        self.sdp = None
-        if sdp_path is not None:
-            with open(sdp_path, "r") as f:
-                self.sdp = f.read()
-
         self.fast = fast
         if self.fast:
             self.logger.info("Using FAST setting")
@@ -86,7 +80,7 @@ class RTSPDecoder:
     def run(self) -> None:
         """Run the decoder. Returns an error code."""
         rtp_decoders: Dict[int, RTPDecoder] = {}
-        rtsp_extractor = RTSPDataExtractor(self.input_path, self.sdp)
+        rtsp_extractor = RTSPDataExtractor(self.input_path)
 
         with CloseAllDictValues(rtp_decoders):
             for task in rtsp_extractor.process_next():
