@@ -12,11 +12,11 @@ from rtsp_decoder.rtsp import RTSPDataExtractor
 from rtsp_decoder.rtp import RTPDecoder
 from rtsp_decoder.task import TaskType
 
-from typing import Optional, Dict, Iterable
+from typing import Optional, Dict
 
 
 @contextmanager
-def CloseAllDictValues(closables: Dict):
+def CloseAllDictValues(closables: dict):
     try:
         yield
     finally:

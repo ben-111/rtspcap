@@ -42,9 +42,7 @@ class RTPDecoder:
         codec_name = get_codec_name_from_sdp_media(sdp_media)
         self._stream_codec = RTPCodec(codec_name, sdp_media, self._fast)
         if self._stream_codec.codec_type not in ("video", "audio"):
-            self.logger.error(f"Unexpected codec type: {self._stream_codec.codec_type}")
-            self._error = True
-            return
+            raise ValueError(f"Unexpected codec type: {self._stream_codec.codec_type}")
 
         self.logger.info(f"Decoding stream with codec: {self._stream_codec.codec_name}")
         self._reassembler = Reassembler[RTPPacket](
@@ -55,9 +53,6 @@ class RTPDecoder:
         )
 
     def close(self) -> None:
-        if self._error:
-            return
-
         self._reassembler.process(None)
         for out_packet, skipped in self._reassembler.get_output_packets():
             self._handle_packet(out_packet)
@@ -68,9 +63,6 @@ class RTPDecoder:
         self._container.close()
 
     def process_rtp_packet(self, rtp_packet: RTPPacket) -> None:
-        if self._error:
-            return
-
         self._reassembler.process(rtp_packet, rtp_packet.seq)
         for out_packet, skipped in self._reassembler.get_output_packets():
             self._handle_packet(out_packet)

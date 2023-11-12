@@ -1,5 +1,5 @@
 from enum import Enum
-from dataclasses import dataclass, field
+import logging
 
 from dpkt.pcap import UniversalReader
 from dpkt.ethernet import Ethernet
@@ -27,8 +27,6 @@ from rtsp_decoder.task import (
 from rtsp_decoder.rtp_packet import RTPPacket
 
 from typing import NamedTuple, Dict, Tuple, List, Optional, Iterator, Set
-
-import logging
 
 
 class IPProto(Enum):
