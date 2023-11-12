@@ -80,6 +80,8 @@ class RTSPDecoder:
                 self.sdp = f.read()
 
         self.fast = fast
+        if self.fast:
+            self.logger.info("Using FAST setting")
 
     def run(self) -> None:
         """Run the decoder. Returns an error code."""
