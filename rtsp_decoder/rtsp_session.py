@@ -121,6 +121,10 @@ class RTSPSession:
             except EmptyQueueException:
                 break
 
+            if out_packet is None:
+                self._state = RTSPSessionState.DONE
+                break
+
             if skipped:
                 # If we got the SDP and all the transport headers we can say
                 # that we're done
