@@ -10,6 +10,7 @@ from rtsp_decoder.codecs.h264 import CodecH264
 from rtsp_decoder.codecs.h265 import CodecH265
 from rtsp_decoder.codecs.mp4v_es import CodecMP4V_ES
 from rtsp_decoder.codecs.mpeg4_generic import CodecMPEG4_GENERIC
+from rtsp_decoder.codecs.pcma import CodecPCMA
 
 from typing import List, Dict, Optional
 
@@ -20,6 +21,7 @@ class RTPCodec:
         "h265": CodecH265,
         "mp4v-es": CodecMP4V_ES,
         "mpeg4-generic": CodecMPEG4_GENERIC,
+        "pcma": CodecPCMA,
     }
 
     def __init__(self, codec_name: str, sdp_media: dict, fast: bool = False):
