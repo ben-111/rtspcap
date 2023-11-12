@@ -43,15 +43,6 @@ class FiveTuple(NamedTuple):
     dst_port: int
     proto: IPProto
 
-    def __eq__(self, other: "FiveTuple") -> bool:
-        return self.__hash__() == other.__hash__()
-
-    def __hash__(self) -> int:
-        peer1 = f"{self.src_ip}:{self.src_port}"
-        peer2 = f"{self.dst_ip}:{self.dst_port}"
-        hash_str = ",".join(sorted([peer1, peer2]))
-        return hash((hash_str, self.proto))
-
     @classmethod
     def from_dpkt(cls, ip_layer: IP) -> "FiveTuple":
         assert isinstance(ip_layer.data, TCP) or isinstance(ip_layer.data, UDP)
