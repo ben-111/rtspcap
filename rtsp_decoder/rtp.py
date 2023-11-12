@@ -18,13 +18,26 @@ class RTPDecoder:
     MAX_OUT_OF_ORDER_PACKETS = 50
     FRAME_BUFFER_SIZE = 100
 
-    def __init__(self, output_path: str, sdp_media: dict, fast: bool = False):
+    def __init__(
+        self,
+        output_path: str,
+        sdp_media: dict,
+        output_format: str,
+        default_vcodec: str,
+        default_acodec: str,
+        force_vcodec: bool = False,
+        force_acodec: bool = False,
+        fast: bool = False,
+    ):
         self.logger = logging.getLogger(__name__)
-        self._error: bool = False
+        self._default_vcodec = default_vcodec
+        self._default_acodec = default_acodec
+        self._force_vcodec = force_vcodec
+        self._force_acodec = force_acodec
         self._fast = fast
+        self._error: bool = False
         self._frame_buffer: List[Frame] = []
         self._out_stream: Optional[Stream] = None
-        self._use_default_settings: bool = False
 
         codec_name = get_codec_name_from_sdp_media(sdp_media)
         self._stream_codec = RTPCodec(codec_name, sdp_media, self._fast)
@@ -37,7 +50,9 @@ class RTPDecoder:
         self._reassembler = Reassembler[RTPPacket](
             self.RTP_SEQ_BIT_SIZE, self.MAX_OUT_OF_ORDER_PACKETS, "packet"
         )
-        self._container: Container = av.open(output_path, format="mp4", mode="w")
+        self._container: Container = av.open(
+            output_path, format=output_format, mode="w"
+        )
 
     def close(self) -> None:
         if self._error:
@@ -76,56 +91,78 @@ class RTPDecoder:
                     self._frame_buffer += frames
                     if len(self._frame_buffer) >= self.FRAME_BUFFER_SIZE:
                         self.logger.info("Frame buffer is full, using default settings")
-                        self._use_default_settings = True
                     else:
                         continue
 
-                try:
-                    if not self._use_default_settings:
-                        self._out_stream = self._container.add_stream(
-                            self._stream_codec.av_codec_name
-                        )
-                        if self._stream_codec.codec_type == "video":
-                            self._out_stream.codec_context.width = (
-                                self._stream_codec.width
-                            )
-                            self._out_stream.codec_context.height = (
-                                self._stream_codec.height
-                            )
-                            if (
-                                self._stream_codec.rate
-                                and 1 < self._stream_codec.rate < 120
-                            ):
-                                self._out_stream.codec_context.rate = (
-                                    self._stream_codec.rate
-                                )
-                            else:
-                                self.logger.warning("Setting frame rate to 30 FPS")
-                                self._out_stream.codec_context.rate = 30
-
-                        elif self._stream_codec.codec_type == "audio":
-                            self._out_stream.codec_context.rate = (
-                                self._stream_codec.rate
-                            )
-                except Exception as e:
-                    self.logger.error(f"Error creating out stream: {e}")
-
-                if self._out_stream is None:
-                    self.logger.info("Creating output stream with default settings")
-                    if self._stream_codec.codec_type == "video":
-                        self._out_stream = self._container.add_stream("h264", rate=30)
-                    elif self._stream_codec.codec_type == "audio":
-                        self._out_stream = self._container.add_stream("aac")
-
-                if self._fast:
-                    self._out_stream.thread_type = "AUTO"
-
+                self._init_out_stream()
                 frames = self._frame_buffer + frames
                 self._frame_buffer.clear()
 
             for frame in frames:
                 encoded_packets = self._out_stream.encode(frame)
                 self._container.mux(encoded_packets)
+
+    def _init_out_stream(self) -> None:
+        assert self._stream_codec.codec_type in ("video", "audio")
+        if self._stream_codec.codec_type == "video":
+            if not self._force_vcodec:
+                try:
+                    self._out_stream = self._container.add_stream(
+                        self._stream_codec.av_codec_name
+                    )
+                except Exception as e:
+                    self.logger.error(f"Error creating out stream: {e}")
+
+            if self._out_stream is None:
+                self._out_stream = self._container.add_stream(self._default_vcodec)
+
+            self.logger.info(
+                f"Added output video stream with codec: {self._out_stream.codec_context.name}"
+            )
+
+            if (
+                self._stream_codec.width is not None
+                and self._stream_codec.height is not None
+            ):
+                self._out_stream.codec_context.width = self._stream_codec.width
+                self._out_stream.codec_context.height = self._stream_codec.height
+            else:
+                self.logger.warning(
+                    "Could not get original frame size, using codec default"
+                )
+
+            if self._stream_codec.rate and 1 < self._stream_codec.rate < 120:
+                self._out_stream.codec_context.rate = self._stream_codec.rate
+            else:
+                self.logger.warning(
+                    "Could not get original frame rate, using codec default"
+                )
+
+        elif self._stream_codec.codec_type == "audio":
+            if not self._force_acodec:
+                try:
+                    self._out_stream = self._container.add_stream(
+                        self._stream_codec.av_codec_name
+                    )
+                except Exception as e:
+                    self.logger.error(f"Error creating out stream: {e}")
+
+            if self._out_stream is None:
+                self._out_stream = self._container.add_stream(self._default_acodec)
+
+            self.logger.info(
+                f"Added output stream with codec: {self._out_stream.codec_context.name}"
+            )
+
+            if self._stream_codec.rate is not None:
+                self._out_stream.codec_context.rate = self._stream_codec.rate
+            else:
+                self.logger.warning(
+                    "Could not get original sample rate, using codec default"
+                )
+
+        if self._fast:
+            self._out_stream.thread_type = "AUTO"
 
     def _flush_encoder(self) -> None:
         if self._out_stream is None:

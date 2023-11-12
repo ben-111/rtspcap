@@ -1,8 +1,11 @@
+from io import BytesIO
 import os
 from contextlib import contextmanager
 import logging
 
 import av
+from av.codec import codecs_available, Codec
+from av.format import formats_available
 from av.container import Container
 
 from rtsp_decoder.rtsp import RTSPDataExtractor
@@ -21,6 +24,19 @@ def CloseAllDictValues(closables: Dict):
             closable.close()
 
 
+@contextmanager
+def TempContainer(output_format: str) -> Container:
+    container = av.open(BytesIO(), mode="w", format=output_format)
+    try:
+        yield container
+    finally:
+        container.close()
+
+
+def format_kwargs(kwargs: dict) -> str:
+    return ", ".join(f"{key}={repr(value)}" for key, value in kwargs.items())
+
+
 class RTSPDecoder:
     """
     This class is the main application which takes a capture file that
@@ -32,9 +48,15 @@ class RTSPDecoder:
     output_prefix: Optional string that will be prepended to each output file; Default is `stream`.
     output_dir: Optional oath to the directory which all the output files will be saved. Default
         is using the name of the capture file without the extension.
-    sdp_path: Optional path to a backup SDP file that will be used if no SDP is found in the capture.
     fast: Tells PyAV to use threading when decoding. Default is False.
     verbose: Print debug logs. Default is False.
+    output_format: Output format of each output file. Default is `mp4`.
+    default_vcodec: Default video codec to fallback on if if copying original codec fails.
+        Default is `h264`.
+    default_acodec: Default audio codec to fallback on if if copying original codec fails.
+        Default is `aac`.
+    force_vcodec: Force using default video codec.
+    force_acodec: Force using default audio codec.
     """
 
     def __init__(
@@ -44,7 +66,13 @@ class RTSPDecoder:
         output_dir: Optional[str] = None,
         fast: bool = False,
         verbose: bool = False,
+        output_format: str = "mp4",
+        default_vcodec: str = "h264",
+        default_acodec: str = "aac",
+        force_vcodec: bool = False,
+        force_acodec: bool = False,
     ):
+        kwargs = locals()
         logging_level = logging.INFO
         if verbose:
             logging_level = logging.DEBUG
@@ -53,9 +81,7 @@ class RTSPDecoder:
             level=logging_level, format="[%(levelname)s][%(name)s] %(message)s"
         )
         self.logger = logging.getLogger(__name__)
-        self.logger.debug(
-            f"Running with arguments: {input_path=}, {output_prefix=}, {output_dir=}, {sdp_path=}, {fast=}"
-        )
+        self.logger.debug(f"Running with arguments: {format_kwargs(kwargs)}")
 
         self.input_path = input_path
         self.output_prefix = output_prefix
@@ -73,6 +99,32 @@ class RTSPDecoder:
 
         self.output_dir = output_dir
 
+        if output_format not in formats_available:
+            raise ValueError(f"Unspported format: {output_format}")
+
+        self.output_format = output_format
+        with TempContainer(self.output_format) as temp_container:
+            if default_vcodec not in codecs_available:
+                raise ValueError(f"Unsupported codec: {default_vcodec}")
+
+            if Codec(default_vcodec, mode="w").type != "video":
+                raise ValueError(f"Codec {default_vcodec} is not a video codec")
+
+            self.default_vcodec = default_vcodec
+            temp_container.add_stream(self.default_vcodec)  # Will throw if incompatible
+
+            if default_acodec not in codecs_available:
+                raise ValueError(f"Unsupported codec: {default_acodec}")
+
+            if Codec(default_acodec, mode="w").type != "audio":
+                raise ValueError(f"Codec {default_acodec} is not a audio codec")
+
+            self.default_acodec = default_acodec
+            temp_container.add_stream(self.default_acodec)  # Will throw if incompatible
+
+        self.force_vcodec = force_vcodec
+        self.force_acodec = force_acodec
+
         self.fast = fast
         if self.fast:
             self.logger.info("Using FAST setting")
@@ -85,12 +137,21 @@ class RTSPDecoder:
         with CloseAllDictValues(rtp_decoders):
             for task in rtsp_extractor.process_next():
                 if task.ttype == TaskType.CREATE_DECODER:
-                    output_filename = f"{self.output_prefix}{task.body.ident}.mp4"
+                    output_filename = (
+                        f"{self.output_prefix}{task.body.ident}.{self.output_format}"
+                    )
                     output_path = os.path.join(self.output_dir, output_filename)
                     self.logger.info(f"Found RTP stream, saving to `{output_path}`")
                     try:
                         rtp_decoder = RTPDecoder(
-                            output_path, task.body.sdp_media, self.fast
+                            output_path,
+                            task.body.sdp_media,
+                            self.output_format,
+                            self.default_vcodec,
+                            self.default_acodec,
+                            self.force_vcodec,
+                            self.force_acodec,
+                            self.fast,
                         )
                     except Exception as e:
                         self.logger.error(e)
