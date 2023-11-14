@@ -205,14 +205,12 @@ class RTSPSession:
                     or length < MIN_RTP_SIZE
                     or length > MAX_RTP_SIZE
                 ):
-                    next_magic_index = self._buffer[INTERLEAVED_HEADER_LEN:].find(
-                        INTERLEAVED_HEADER_MAGIC
-                    )
+                    next_magic_index = self._buffer[1:].find(INTERLEAVED_HEADER_MAGIC)
                     if next_magic_index < 0:
                         self._buffer = b""
                         break
 
-                    self._buffer = self._buffer[next_magic_index:]
+                    self._buffer = self._buffer[next_magic_index + 1 :]
                 elif len(self._buffer[INTERLEAVED_HEADER_LEN:]) < length:
                     break
                 else:
