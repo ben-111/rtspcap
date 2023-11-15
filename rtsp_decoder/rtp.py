@@ -53,9 +53,18 @@ class RTPDecoder:
         )
 
     def close(self) -> None:
+        if self._out_stream is None:
+            self.logger.debug("Could not get input codec settings, using defaults")
+            self._init_out_stream()
+            for frame in self._frame_buffer:
+                encoded_packets = self._out_stream.encode(frame)
+                self._container.mux(encoded_packets)
+
+            self._frame_buffer.clear()
+
         self._reassembler.process(None)
         for out_packet, skipped in self._reassembler.get_output_packets():
-            self._handle_packet(out_packet, True)
+            self._handle_packet(out_packet)
             if out_packet is None:
                 break
 
@@ -70,7 +79,6 @@ class RTPDecoder:
     def _handle_packet(
         self,
         packet: Optional[RTPPacket],
-        flushing: bool = False,
     ) -> None:
         out_packets = self._stream_codec.handle_packet(packet)
         self.logger.debug(f"Parsed {len(out_packets)} packets")
@@ -80,7 +88,7 @@ class RTPDecoder:
             self.logger.debug(f"Decoded {len(frames)} frames")
 
             if self._out_stream is None:
-                if not flushing and not self._stream_codec.ready:
+                if not self._stream_codec.ready:
                     self._frame_buffer += frames
                     if len(self._frame_buffer) >= self.FRAME_BUFFER_SIZE:
                         self.logger.info("Frame buffer is full, using default settings")
