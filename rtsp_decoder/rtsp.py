@@ -119,11 +119,16 @@ class RTSPDataExtractor:
 
             # Finish handling all the tcp sessions
             for five_tuple, rtsp_session in rtsp_sessions.items():
-                if five_tuple in self._done_rtsp_five_tuples:
+                if (
+                    five_tuple in self._done_rtsp_five_tuples
+                    and five_tuple not in self._rtp_over_tcp_sessions
+                ):
                     continue
 
                 rtsp_session.process_packet(None)
-                self._handle_rtsp_session(five_tuple, rtsp_session)
+                if five_tuple not in self._done_rtsp_five_tuples:
+                    self._handle_rtsp_session(five_tuple, rtsp_session)
+
                 if five_tuple in self._rtp_over_tcp_sessions:
                     yield from self._process_rtp_over_tcp(five_tuple, rtsp_session)
 
