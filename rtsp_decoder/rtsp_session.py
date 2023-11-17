@@ -14,7 +14,7 @@ from rtsp_decoder.dpkt_helpers.rtsp import RTSPResponse
 from rtsp_decoder.sdp import get_sdp_medias
 from rtsp_decoder.rtp_packet import RTPPacket
 
-from typing import NamedTuple, Optional, Dict, Iterator, List
+from typing import NamedTuple, Optional, Dict, Iterator, List, Tuple
 
 TCP_SEQ_SIZE_IN_BITS = 4 * 8
 RTSP_PORTS = (554, 8554, 7236)  # Taken from wireshark
@@ -170,6 +170,27 @@ class RTSPSession:
             ):
                 self._state = RTSPSessionState.DONE
 
+    @staticmethod
+    def _parse_interleaved_header(header: bytes) -> Tuple[int, int, int]:
+        assert len(header) >= INTERLEAVED_HEADER_LEN
+        magic = header[0]
+        channel = header[1]
+        length = int.from_bytes(header[2:4], byteorder="big")
+        return magic, channel, length
+
+    def _valid_interleaved_header(self, magic, channel, length) -> bool:
+        if (
+            magic != INTERLEAVED_HEADER_MAGIC
+            or (
+                channel not in self.control_channels
+                and channel not in self.data_channels
+            )
+            or length < MIN_RTP_SIZE
+            or length > MAX_RTP_SIZE
+        ):
+            return False
+        return True
+
     def get_rtp(self) -> Iterator[RTPPacket]:
         if self.state != RTSPSessionState.PROCESSING_RTP:
             self._buffer = b""
@@ -180,11 +201,22 @@ class RTSPSession:
                 continue
 
             if skipped:
-                self._buffer = b""
-                if INTERLEAVED_HEADER_MAGIC not in out_packet:
+                magic, channel, length = self._parse_interleaved_header(self._buffer)
+                if self._valid_interleaved_header(magic, channel, length):
+                    payload = self._buffer[INTERLEAVED_HEADER_LEN:]
+                    padding = b"\x00" * (length - len(payload))
+                    self._buffer += padding
+                else:
+                    self._buffer = b""
+
+                if INTERLEAVED_HEADER_MAGIC in out_packet:
+                    self._buffer += out_packet[
+                        out_packet.find(INTERLEAVED_HEADER_MAGIC) :
+                    ]
+
+                if not self._buffer:
                     continue
 
-                self._buffer = out_packet[out_packet.find(INTERLEAVED_HEADER_MAGIC) :]
             else:
                 self._buffer += out_packet
 
@@ -192,19 +224,9 @@ class RTSPSession:
                 if len(self._buffer) < INTERLEAVED_HEADER_LEN:
                     break
 
-                magic = self._buffer[0]
-                channel = self._buffer[1]
-                length = int.from_bytes(self._buffer[2:4], byteorder="big")
+                magic, channel, length = self._parse_interleaved_header(self._buffer)
 
-                if (
-                    magic != INTERLEAVED_HEADER_MAGIC
-                    or (
-                        channel not in self.control_channels
-                        and channel not in self.data_channels
-                    )
-                    or length < MIN_RTP_SIZE
-                    or length > MAX_RTP_SIZE
-                ):
+                if not self._valid_interleaved_header(magic, channel, length):
                     next_magic_index = self._buffer[1:].find(INTERLEAVED_HEADER_MAGIC)
                     if next_magic_index < 0:
                         self._buffer = b""
