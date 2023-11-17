@@ -14,7 +14,7 @@ class RTPPacket(NamedTuple):
     @classmethod
     def from_dpkt(cls, packet: RTP) -> "RTPPacket":
         data = packet.data
-        if packet.p:
+        if packet.p and data:
             padding_length = data[-1]
             data = data[:-padding_length]
 

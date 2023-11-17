@@ -198,16 +198,22 @@ class RTSPSession:
 
         for out_packet, skipped in self._reassembler.get_output_packets():
             if not out_packet:
-                continue
+                out_packet = b""
+                skipped = True
 
             if skipped:
-                magic, channel, length = self._parse_interleaved_header(self._buffer)
-                if self._valid_interleaved_header(magic, channel, length):
-                    payload = self._buffer[INTERLEAVED_HEADER_LEN:]
-                    padding = b"\x00" * (length - len(payload))
-                    self._buffer += padding
-                else:
+                if len(self._buffer) < INTERLEAVED_HEADER_LEN:
                     self._buffer = b""
+                else:
+                    magic, channel, length = self._parse_interleaved_header(
+                        self._buffer
+                    )
+                    if self._valid_interleaved_header(magic, channel, length):
+                        payload = self._buffer[INTERLEAVED_HEADER_LEN:]
+                        padding = b"\x00" * (length - len(payload))
+                        self._buffer += padding
+                    else:
+                        self._buffer = b""
 
                 if INTERLEAVED_HEADER_MAGIC in out_packet:
                     self._buffer += out_packet[
@@ -245,11 +251,24 @@ class RTSPSession:
                                 ]
                             )
                         )
-                        yield rtp_packet
+                        if rtp_packet.payload:
+                            yield rtp_packet
 
                     # Some badly coded devices will report a length longer than the RTP packet
-                    next_magic_index = self._buffer[1:].find(INTERLEAVED_HEADER_MAGIC)
-                    if next_magic_index < 0:
-                        self._buffer = self._buffer[INTERLEAVED_HEADER_LEN + length :]
+                    length_is_fake = True
+                    if len(self._buffer) > INTERLEAVED_HEADER_LEN + length:
+                        length_is_fake = (
+                            self._buffer[INTERLEAVED_HEADER_LEN + length]
+                            != INTERLEAVED_HEADER_MAGIC
+                        )
+
+                    if length_is_fake:
+                        next_magic_index = self._buffer[1:].find(
+                            INTERLEAVED_HEADER_MAGIC
+                        )
+                        if next_magic_index < 0:
+                            self._buffer = b""
+                        else:
+                            self._buffer = self._buffer[next_magic_index + 1 :]
                     else:
-                        self._buffer = self._buffer[next_magic_index + 1 :]
+                        self._buffer = self._buffer[INTERLEAVED_HEADER_LEN + length :]
