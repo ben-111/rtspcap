@@ -75,7 +75,6 @@ class RTSPDataExtractor:
         self._rtp_id_to_ident: Dict[RTPID, int] = {}
         self._rtp_over_tcp_sessions: Dict[FiveTuple, RTSPSession] = {}
         self._rtp_over_udp_sessions: Dict[FiveTuple, RTSPSession] = {}
-        self._invalid_five_tuples: Set[FiveTuple] = set()
         self._done_rtsp_five_tuples: Set[FiveTuple] = set()
 
     def process_next(self) -> Iterator[Task]:
@@ -150,8 +149,6 @@ class RTSPDataExtractor:
                     continue
 
                 five_tuple = FiveTuple.from_dpkt(ip_layer)
-                if five_tuple in self._invalid_five_tuples:
-                    continue
 
                 if five_tuple not in self._rtp_over_udp_sessions:
                     continue
@@ -255,10 +252,7 @@ class RTSPDataExtractor:
             )
 
             if sdp_media is None:
-                self.logger.error(
-                    "Could not find SDP media of RTP stream in SDP, discarding stream"
-                )
-                self._invalid_five_tuples.add(five_tuple)
+                self.logger.debug("Discarding bad RTP packet")
                 return
 
             ident = self._get_next_ident()
