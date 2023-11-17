@@ -100,8 +100,11 @@ class RTPDecoder:
                 self._frame_buffer.clear()
 
             for frame in frames:
-                encoded_packets = self._out_stream.encode(frame)
-                self._container.mux(encoded_packets)
+                try:
+                    encoded_packets = self._out_stream.encode(frame)
+                    self._container.mux(encoded_packets)
+                except Exception as e:
+                    self.logger.error(e)
 
     def _init_out_stream(self) -> None:
         assert self._stream_codec.codec_type in ("video", "audio")
