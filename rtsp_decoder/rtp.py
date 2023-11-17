@@ -53,7 +53,7 @@ class RTPDecoder:
         )
 
     def close(self) -> None:
-        if self._out_stream is None:
+        if self._out_stream is None and self._frame_buffer:
             self.logger.debug("Could not get input codec settings, using defaults")
             self._init_out_stream()
             for frame in self._frame_buffer:
