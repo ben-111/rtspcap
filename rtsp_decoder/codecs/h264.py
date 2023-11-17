@@ -50,7 +50,7 @@ class CodecH264(CodecBase):
         buf = packet.payload
         if len(buf) == 0:
             logger.error(f"RTP h264 invalid data")
-            return
+            return out_packets
 
         nal = buf[0]
         nal_type = nal & 0x1F
