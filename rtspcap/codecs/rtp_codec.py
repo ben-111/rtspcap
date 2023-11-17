@@ -3,15 +3,15 @@ import logging
 from av.packet import Packet as AVPacket
 from av.frame import Frame
 
-from rtsp_decoder.rtp_packet import RTPPacket
+from rtspcap.rtp_packet import RTPPacket
 
-from rtsp_decoder.codecs.codec_base import CodecBase
-from rtsp_decoder.codecs.h264 import CodecH264
-from rtsp_decoder.codecs.h265 import CodecH265
-from rtsp_decoder.codecs.mp4v_es import CodecMP4V_ES
-from rtsp_decoder.codecs.mpeg4_generic import CodecMPEG4_GENERIC
-from rtsp_decoder.codecs.pcma import CodecPCMA
-from rtsp_decoder.codecs.pcmu import CodecPCMU
+from rtspcap.codecs.codec_base import CodecBase
+from rtspcap.codecs.h264 import CodecH264
+from rtspcap.codecs.h265 import CodecH265
+from rtspcap.codecs.mp4v_es import CodecMP4V_ES
+from rtspcap.codecs.mpeg4_generic import CodecMPEG4_GENERIC
+from rtspcap.codecs.pcma import CodecPCMA
+from rtspcap.codecs.pcmu import CodecPCMU
 
 from typing import List, Dict, Optional
 

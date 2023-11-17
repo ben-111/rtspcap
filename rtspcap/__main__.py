@@ -1,7 +1,7 @@
 import sys
 import argparse
 
-from rtsp_decoder import RTSPDecoder
+from rtspcap import RTSPcapApp
 
 
 PREFIX_OPT_HELP = """\
@@ -25,7 +25,7 @@ FORCE_ACODEC_HELP = FORCE_CODEC_HELP_TEMPLATE.format("audio")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="RTSP decoder from capture file",
+        description="RTSP stream decoder from capture file",
         prog=f"python -m {__package__}",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
@@ -42,7 +42,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     try:
-        rtsp_decoder = RTSPDecoder(
+        app = RTSPcapApp(
             args.input,
             args.prefix,
             args.output_dir,
@@ -54,7 +54,7 @@ if __name__ == "__main__":
             args.force_vcodec,
             args.force_acodec,
         )
-        rtsp_decoder.run()
+        app.run()
     except Exception as e:
         print(f"[ERROR] {e}", file=sys.stderr)
         sys.exit(1)

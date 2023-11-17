@@ -1,6 +1,6 @@
 from av.codec import CodecContext
 
-from rtsp_decoder.codecs.codec_base import CodecBase
+from rtspcap.codecs.codec_base import CodecBase
 
 from typing import Tuple, Any
 

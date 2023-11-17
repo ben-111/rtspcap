@@ -5,10 +5,10 @@ from av.container import Container
 from av.stream import Stream
 from av.frame import Frame
 
-from rtsp_decoder.sdp import get_codec_name_from_sdp_media
-from rtsp_decoder.rtp_packet import RTPPacket
-from rtsp_decoder.reassembler import Reassembler
-from rtsp_decoder.codecs.rtp_codec import RTPCodec
+from rtspcap.sdp import get_codec_name_from_sdp_media
+from rtspcap.rtp_packet import RTPPacket
+from rtspcap.reassembler import Reassembler
+from rtspcap.codecs.rtp_codec import RTPCodec
 
 from typing import Optional, List
 

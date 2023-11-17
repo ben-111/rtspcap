@@ -9,10 +9,10 @@ from dpkt.dpkt import UnpackError, NeedData
 
 import sdp_transform
 
-from rtsp_decoder.reassembler import Reassembler, EmptyQueueException
-from rtsp_decoder.dpkt_helpers.rtsp import RTSPResponse
-from rtsp_decoder.sdp import get_sdp_medias
-from rtsp_decoder.rtp_packet import RTPPacket
+from rtspcap.reassembler import Reassembler, EmptyQueueException
+from rtspcap.dpkt_helpers.rtsp import RTSPResponse
+from rtspcap.sdp import get_sdp_medias
+from rtspcap.rtp_packet import RTPPacket
 
 from typing import NamedTuple, Optional, Dict, Iterator, List, Tuple
 

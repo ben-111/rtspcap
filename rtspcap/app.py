@@ -8,9 +8,9 @@ from av.codec import codecs_available, Codec
 from av.format import formats_available
 from av.container import Container
 
-from rtsp_decoder.rtsp import RTSPDataExtractor
-from rtsp_decoder.rtp import RTPDecoder
-from rtsp_decoder.task import TaskType
+from rtspcap.rtsp import RTSPDataExtractor
+from rtspcap.rtp import RTPDecoder
+from rtspcap.task import TaskType
 
 from typing import Optional, Dict
 
@@ -37,7 +37,7 @@ def format_kwargs(kwargs: dict) -> str:
     return ", ".join(f"{key}={repr(value)}" for key, value in kwargs.items())
 
 
-class RTSPDecoder:
+class RTSPcapApp:
     """
     This class is the main application which takes a capture file that
     contains one or more RTSP streams and extracts them as video/audio

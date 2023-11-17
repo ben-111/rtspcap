@@ -3,15 +3,15 @@ from base64 import b64decode
 from dataclasses import dataclass
 import logging
 
-from rtsp_decoder.codecs.codec_base import CodecBase
-from rtsp_decoder.codecs.h264 import CodecH264
-from rtsp_decoder.codecs.h264 import H264_STARTING_SEQUENCE
-from rtsp_decoder.codecs.h264 import H264_INPUT_BUFFER_PADDING_SIZE
+from rtspcap.codecs.codec_base import CodecBase
+from rtspcap.codecs.h264 import CodecH264
+from rtspcap.codecs.h264 import H264_STARTING_SEQUENCE
+from rtspcap.codecs.h264 import H264_INPUT_BUFFER_PADDING_SIZE
 
 from av.codec import CodecContext
 from av.packet import Packet as AVPacket
 
-from rtsp_decoder.task import RTPPacket
+from rtspcap.task import RTPPacket
 
 from typing import List, Optional, Tuple, Any
 

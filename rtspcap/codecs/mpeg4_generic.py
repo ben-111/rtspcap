@@ -5,9 +5,9 @@ from dataclasses import dataclass, field
 from av.codec import CodecContext
 from av.packet import Packet as AVPacket
 
-from rtsp_decoder.task import RTPPacket
+from rtspcap.task import RTPPacket
 
-from rtsp_decoder.codecs.codec_base import CodecBase
+from rtspcap.codecs.codec_base import CodecBase
 
 from typing import NamedTuple, List, Dict, Tuple, Any, Optional
 

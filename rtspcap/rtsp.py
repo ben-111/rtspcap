@@ -11,20 +11,20 @@ from dpkt.utils import inet_to_str
 
 import sdp_transform
 
-from rtsp_decoder.rtsp_session import (
+from rtspcap.rtsp_session import (
     RTSPSession,
     RTSPSessionState,
     RTSP_PORTS,
     RTSPTransportHeader,
 )
-from rtsp_decoder.sdp import get_sdp_medias, get_payload_type_from_sdp_media
-from rtsp_decoder.task import (
+from rtspcap.sdp import get_sdp_medias, get_payload_type_from_sdp_media
+from rtspcap.task import (
     Task,
     TaskType,
     CreateDecoderTaskBody,
     ProcessRTPPacketTaskBody,
 )
-from rtsp_decoder.rtp_packet import RTPPacket
+from rtspcap.rtp_packet import RTPPacket
 
 from typing import NamedTuple, Dict, Tuple, List, Optional, Iterator, Set
 

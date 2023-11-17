@@ -1,8 +1,8 @@
 from av.codec import CodecContext
 from av.packet import Packet as AVPacket
 
-from rtsp_decoder.codecs.codec_base import CodecBase
-from rtsp_decoder.rtp_packet import RTPPacket
+from rtspcap.codecs.codec_base import CodecBase
+from rtspcap.rtp_packet import RTPPacket
 
 from typing import Tuple, Any, List, Optional
 

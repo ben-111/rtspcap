@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from av.codec import CodecContext
 from av.packet import Packet as AVPacket
 
-from rtsp_decoder.task import RTPPacket
+from rtspcap.task import RTPPacket
 
 from typing import Dict, List, Optional, Tuple, Any
 

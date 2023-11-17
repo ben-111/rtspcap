@@ -1,6 +1,6 @@
 from enum import Enum
 
-from rtsp_decoder.rtp_packet import RTPPacket
+from rtspcap.rtp_packet import RTPPacket
 
 from typing import NamedTuple, Union
 

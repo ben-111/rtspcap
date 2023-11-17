@@ -1,12 +1,12 @@
 from base64 import b64decode
 import logging
 
-from rtsp_decoder.codecs.codec_base import CodecBase
+from rtspcap.codecs.codec_base import CodecBase
 
 from av.codec import CodecContext
 from av.packet import Packet as AVPacket
 
-from rtsp_decoder.task import RTPPacket
+from rtspcap.task import RTPPacket
 
 from typing import List, Optional, Tuple, Any
 

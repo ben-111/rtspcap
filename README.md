@@ -1,35 +1,22 @@
-# RTSP Decoder
+# RTSPcap
 
-The decoder will try to extract all the RTP streams it finds, and will try to
-use the information it has to the fullest (best effort). If an SDP file is not
-found in the stream, you can provide one that might be close enough and work
-for these streams.
+RTSPcap is a tool to extract video and audio data from RTSP/RTP streams
+found in capture files.
+The tool will try to extract all the RTP streams it finds, and will try to
+use the information it has to the fullest (best effort).
 
->Disclaimer: To detect a packet as an RTP packet, there MUST be an RTSP SETUP response
-in the capture file.
+## Usage
+Make sure that the python packages in the `requirements.txt` file are installed in 
+your environment.
 
+The basic usage is:
+```bash
+python -m rtspcap <PATH_TO_CAPTURE_FILE>
 ```
-usage: python -m rtsp_decoder [-h] [-p PREFIX] [-o OUTPUT_DIR] [--sdp SDP] [--fast] [-v]
-                              input
 
-RTSP decoder from capture file
-
-positional arguments:
-  input                 Path to capture file with RTSP and RTP data
-
-options:
-  -h, --help            show this help message and exit
-  -p PREFIX, --prefix PREFIX
-                        Prefix for the name of the files generated. The stream number `n`
-                        and the file extenstion `.mp4` will be appended like so:
-                        `<PREFIX>n.mp4`. For example, if the prefix is `stream` you might
-                        get `stream0.mp4`
-  -o OUTPUT_DIR, --output-dir OUTPUT_DIR
-                        Output directory path. Default is the name of the capture file
-  --sdp SDP             Path to a backup SDP file to fallback on if none was found in the
-                        capture
-  --fast                Use threading to boost the decoding speed
-  -v, --verbose         Add debug prints
+For more details, you can run:
+```bash
+python -m rtspcap -h
 ```
 
 ## How it works (and how I made it)
