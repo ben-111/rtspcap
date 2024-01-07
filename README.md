@@ -1,23 +1,34 @@
-# RTSPcap
+# RTSPCAP
 
-RTSPcap is a tool to extract video and audio data from RTSP/RTP streams
-found in capture files.
-The tool will try to extract all the RTP streams it finds, and will try to
-use the information it has to the fullest (best effort).
+RTSPCAP is a tool for extracting video and audio data from RTSP/RTP streams found in capture files.
+This tool will do its absolute best to recover your RTSP streams, even when your capture file has missing, out of order and duplicate packets.
+
+## Features
+
+-   Supports `pcap` and `pcapng` files
+-   Supports RTP/TCP and RTP/UDP
+-   Supports the the following codecs:
+    -   H264
+    -   H265
+    -   MP4V-ES
+    -   MPEG4
+    -   PCMA
+    -   PCMU
 
 ## Usage
-Make sure that the python packages in the `requirements.txt` file are installed in 
+
+Make sure that the python packages in the `requirements.txt` file are installed in
 your environment.
 
 The basic usage is:
+
 ```bash
 python -m rtspcap <PATH_TO_CAPTURE_FILE>
 ```
 
-For more details, you can run:
-```bash
-python -m rtspcap -h
-```
+RTSPCAP will output any video and audio stream it finds, seperately.
+
+> RTSPCAP expects the RTSP handshake to appear in the capture file
 
 ## How it works (and how I made it)
 
@@ -84,4 +95,3 @@ For parsing the codecs, I used two sources: FFmpeg and the relevant RFC. Since I
 just a wrapper around FFmpeg, looking at the FFmpeg source really helped at times. However, sometimes
 their code is really hard to understand, and in those cases I used the relevant RFC to understand the
 structure of the RTP payload.
-

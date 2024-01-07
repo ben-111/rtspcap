@@ -57,6 +57,9 @@ class RTSPcapApp:
         Default is `aac`.
     force_vcodec: Force using default video codec.
     force_acodec: Force using default audio codec.
+    assume_tcp_length_is_fake: When using RTP/TCP, some badly coded devices will send the wrong RTP
+        packet length, so we must try to guess the length of the packet ourselves by trying to find
+        the start of the next packet.
     """
 
     def __init__(
@@ -71,6 +74,7 @@ class RTSPcapApp:
         default_acodec: str = "aac",
         force_vcodec: bool = False,
         force_acodec: bool = False,
+        assume_tcp_length_is_fake: bool = False,
     ):
         kwargs = locals()
         logging_level = logging.INFO
@@ -129,10 +133,14 @@ class RTSPcapApp:
         if self.fast:
             self.logger.info("Using FAST setting")
 
+        self.assume_tcp_length_is_fake = assume_tcp_length_is_fake
+
     def run(self) -> None:
-        """Run the decoder. Returns an error code."""
+        """Run the decoder"""
         rtp_decoders: Dict[int, RTPDecoder] = {}
-        rtsp_extractor = RTSPDataExtractor(self.input_path)
+        rtsp_extractor = RTSPDataExtractor(
+            self.input_path, self.assume_tcp_length_is_fake
+        )
 
         with CloseAllDictValues(rtp_decoders):
             for task in rtsp_extractor.process_next():

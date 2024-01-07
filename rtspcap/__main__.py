@@ -11,7 +11,7 @@ be appended like so: `<PREFIX>n.<output_format>`.
 For example, if the prefix is `stream` and the output format is `mp4` you might get `stream0.mp4`
 """
 OUTPUT_DIR_HELP = "Output directory path. Default is the name of the capture file"
-FAST_HELP = "Use threading to boost the decoding speed"
+FAST_HELP = "Use threading to boost the decoding speed (use with caution)"
 FORMAT_HELP = "Output format (to get a list of output formats run `ffmpeg -formats`)"
 DEFAULT_CODEC_HELP_TEMPLATE = (
     "Default {} codec to fallback on if copying original codec fails "
@@ -22,10 +22,15 @@ DEFAULT_ACODEC_HELP = DEFAULT_CODEC_HELP_TEMPLATE.format("audio")
 FORCE_CODEC_HELP_TEMPLATE = "Force using default {} codec"
 FORCE_VCODEC_HELP = FORCE_CODEC_HELP_TEMPLATE.format("video")
 FORCE_ACODEC_HELP = FORCE_CODEC_HELP_TEMPLATE.format("audio")
+GUESS_TCP_LEN_HELP = (
+    "When using RTP/TCP, some badly coded devices will send the wrong RTP"
+    "packet length, so we must try to guess the length of the packet ourselves"
+    "by trying to find the start of the next packet"
+)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="RTSP stream decoder from capture file",
+        description="Recover your RTSP streams from a capture file",
         prog=f"python -m {__package__}",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
@@ -39,6 +44,7 @@ if __name__ == "__main__":
     parser.add_argument("--default-acodec", help=DEFAULT_ACODEC_HELP, default="aac")
     parser.add_argument("--force-vcodec", action="store_true", help=FORCE_VCODEC_HELP)
     parser.add_argument("--force-acodec", action="store_true", help=FORCE_ACODEC_HELP)
+    parser.add_argument("--guess-tcp-len", action="store_true", help=GUESS_TCP_LEN_HELP)
     args = parser.parse_args()
 
     try:
@@ -53,6 +59,7 @@ if __name__ == "__main__":
             args.default_acodec,
             args.force_vcodec,
             args.force_acodec,
+            args.guess_tcp_len,
         )
         app.run()
     except Exception as e:

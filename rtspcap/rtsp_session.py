@@ -51,7 +51,7 @@ class RTSPSessionState(Enum):
 class RTSPSession:
     MAX_OUT_OF_ORDER = 30
 
-    def __init__(self):
+    def __init__(self, assume_tcp_length_is_fake: bool = False):
         self.logger = logging.getLogger(__name__)
         self.server_ip: Optional[str] = None
         self.client_ip: Optional[str] = None
@@ -59,6 +59,7 @@ class RTSPSession:
         self.transport_headers: List[RTSPTransportHeader] = []
         self.control_channels: List[int] = []
         self.data_channels: List[int] = []
+        self._assume_tcp_length_is_fake = assume_tcp_length_is_fake
         self._reassembler = Reassembler[bytes](
             TCP_SEQ_SIZE_IN_BITS, self.MAX_OUT_OF_ORDER, "data"
         )
@@ -255,12 +256,14 @@ class RTSPSession:
                             yield rtp_packet
 
                     # Some badly coded devices will report a length longer than the RTP packet
-                    length_is_fake = True
-                    if len(self._buffer) > INTERLEAVED_HEADER_LEN + length:
-                        length_is_fake = (
-                            self._buffer[INTERLEAVED_HEADER_LEN + length]
-                            != INTERLEAVED_HEADER_MAGIC
-                        )
+                    length_is_fake = False
+                    if self._assume_tcp_length_is_fake:
+                        length_is_fake = True
+                        if len(self._buffer) > INTERLEAVED_HEADER_LEN + length:
+                            length_is_fake = (
+                                self._buffer[INTERLEAVED_HEADER_LEN + length]
+                                != INTERLEAVED_HEADER_MAGIC
+                            )
 
                     if length_is_fake:
                         next_magic_index = self._buffer[1:].find(

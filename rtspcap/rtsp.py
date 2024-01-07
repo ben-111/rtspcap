@@ -68,8 +68,9 @@ class RTSPDataExtractor:
     Find the first RTSP stream, and extract from it the stream name, the sdp and the tracks
     """
 
-    def __init__(self, pcap_path: str):
+    def __init__(self, pcap_path: str, assume_tcp_length_is_fake: bool):
         self.logger = logging.getLogger(__name__)
+        self._assume_tcp_length_is_fake = assume_tcp_length_is_fake
         self._pcap_path: str = pcap_path
         self._current_ident: int = 0
         self._rtp_id_to_ident: Dict[RTPID, int] = {}
@@ -109,7 +110,9 @@ class RTSPDataExtractor:
                     continue
 
                 if five_tuple not in rtsp_sessions:
-                    rtsp_sessions[five_tuple] = RTSPSession()
+                    rtsp_sessions[five_tuple] = RTSPSession(
+                        self._assume_tcp_length_is_fake
+                    )
 
                 rtsp_session = rtsp_sessions[five_tuple]
                 rtsp_session.process_packet(ip_layer)
